@@ -25,15 +25,14 @@ for i = 1:N-1
     rects(:,i) = [3,4,(i-1)*L/(N-1),(i-1)*L/(N-1),i*L/(N-1),i*L/(N-1),0, h, h, 0]';
     n = ['Seg',num2str(i)];
     ns = [ns;n];
-    
     if ~isempty(sf)
-        sf = [sf,'+',n];
-    else
-        sf = n;
-    end
+    sf = [sf,'+',n];
 end
 
-g = decsg(rects,sf,ns');
+rect = [3,4,0,0,L,L,0, h, h, 0]';
+ns = char('rect');
+ns = ns';
+g = decsg(rect,'rect',ns);
 geometryFromEdges(beam,g);
 
 pdegplot(beam,'EdgeLabels','on');
@@ -54,6 +53,9 @@ generateMesh(beam,'Hmax',h,...
                     'Hmin',h);
 pdeplot(beam);
          
+              
+              
+              
               
               
               
