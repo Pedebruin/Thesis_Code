@@ -7,56 +7,67 @@ close all
 L = 5;    % mm
 h = 1;     % mm
 
-N = 10;      % Number of Horizontal Nodes
+N = L/h;      % Number of Horizontal Nodes
 
 E = 210E9;
 mu = 0.3;
 rho = 7800;
+alpha = 10;
+beta = 2;
 
-%% Setup
-% Create container
-beam = createpde('structural','modal-planestress');
+[K,M,R,nodes,links,beam] = buildBeam(L,h,N,E,mu,rho,alpha,beta);
 
-% Define Geometry
-rects = zeros(10,N-1);
-ns = [];
-sf = [];
-for i = 1:N-1
-    rects(:,i) = [3,4,(i-1)*L/(N-1),(i-1)*L/(N-1),i*L/(N-1),i*L/(N-1),0, h, h, 0]';
-    n = ['Seg',num2str(i)];
-    ns = [ns;n];
-    if ~isempty(sf)
-    sf = [sf,'+',n];
+              
+% q -> State vector!! (displacement vector)
+%% Settings
+plotSettings.nodes = true;
+plotSettings.nodeNumbers = false;
+plotSettings.links = true;
+plotSettings.linkNumbers = false;
+
+
+numNodes = length(nodes);
+numLinks = length(links);
+q = zeros(numNodes,1);          % State vector!
+
+figure()
+hold on
+axis equal
+ax = gca;
+P = [];
+% Plot Nodes
+for i = 1:numNodes
+    % Nodes
+    if plotSettings.nodes == true
+        nodePlots = nodes{i}.plotNode(ax,'k');
+        P = [P,nodePlots];
+    end
+    
+    % Node Numbers
+    if plotSettings.nodeNumbers == true
+        nodeNumberPlots = nodes{i}.plotNumber(ax,'k');
+        P = [P,nodeNumberPlots];
+    end
 end
 
-rect = [3,4,0,0,L,L,0, h, h, 0]';
-ns = char('rect');
-ns = ns';
-g = decsg(rect,'rect',ns);
-geometryFromEdges(beam,g);
+% Plot Links
+for i = 1:numLinks
+    % Links
+    if plotSettings.links == true
+        linkPlots = links{i}.plotLink(ax,[0 0.4470 0.7410]);
+        P = [P,linkPlots];
+    end
+    
+    % Link Numbers
+    if plotSettings.linkNumbers == true
+        linkNumberPlots = links{i}.plotNumber(ax,'k');
+        P = [P,linkNumberPlots];
+    end
+end
 
-pdegplot(beam,'EdgeLabels','on');
 
-I = h^3/12;
-analyticalOmega1 = 3.516*sqrt(E*I/(L^4*(rho*h)))/(2*pi);
 
-% Apply material to structure
-structuralProperties(beam,'YoungsModulus', E, ...
-                           'PoissonsRatio', mu,...
-                           'massDensity', rho);
-                       
-% Set up boundary conditions
-structuralBC(beam,'edge',1,'Constraint','fixed');
 
-% Generate Mesh
-generateMesh(beam,'Hmax',h,...
-                    'Hmin',h);
-pdeplot(beam);
-         
-              
-              
-              
-              
               
               
               
