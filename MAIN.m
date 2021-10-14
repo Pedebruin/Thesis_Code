@@ -1,10 +1,10 @@
 clear all
 close all
-% This is for now the main analysis file to be made
+set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',12);  
 
-
-%% Parameters
-L = 5;    % mm
+%% Parameters & Settings
+% Parameters
+L = 100;    % mm
 h = 1;     % mm
 
 N = L/h;      % Number of Horizontal Nodes
@@ -15,67 +15,52 @@ rho = 7800;
 alpha = 10;
 beta = 2;
 
-[K,M,R,nodes,links,beam] = buildBeam(L,h,N,E,mu,rho,alpha,beta);
-
-              
-% q -> State vector!! (displacement vector)
-%% Settings
+% Settings
+plotSettings.realMesh = true;
 plotSettings.nodes = true;
-plotSettings.nodeNumbers = true;
+plotSettings.nodeNumbers = false;
 plotSettings.links = true;
 plotSettings.linkNumbers = false;
 
 
+% build FEM model of the beam
+[K,M,R,nodes,links,beam] = buildBeam(L,h,N,E,mu,rho,alpha,beta,plotSettings);
 numNodes = length(nodes);
 numLinks = length(links);
-q = zeros(numNodes,1);          % State vector!
 
-figure()
-hold on
-axis equal
-ax = gca;
-P = [];
 
-% Plot Links
-for i = 1:numLinks
-    % Links
-    if plotSettings.links == true
-        linkPlots = links{i}.plotLink(ax,[0 0.4470 0.7410]);
-        P = [P,linkPlots];
-    end
-    
-    % Link Numbers
-    if plotSettings.linkNumbers == true
-        linkNumberPlots = links{i}.plotNumber(ax,'k');
-        P = [P,linkNumberPlots];
-    end
-end
+% Find current state:
+q = zeros(size(K,1),1);
 
-% Plot Nodes
-for i = 1:numNodes
+[V,D] = eigs(K,M);
+D = sort(real(sqrt(D)))/(2*pi);
+
+% Update Beam
+updateBeam(links,nodes,q);
+
+% Plot beam
+plotBeam(nodes,links,plotSettings);
+
+
+
+
+
+              
+              
+              
+              
+function [links,nodes] =  updateBeam(links,nodes,q)
+    numNodes = length(nodes);
+    % Update beam
     % Nodes
-    if plotSettings.nodes == true
-        nodePlots = nodes{i}.plotNode(ax,'k');
-        P = [P,nodePlots];
+    for i = 1:numNodes
+        nodes{i}.update(q);
     end
-    
-    % Node Numbers
-    if plotSettings.nodeNumbers == true
-        nodeNumberPlots = nodes{i}.plotNumber(ax,'k');
-        P = [P,nodeNumberPlots];
+    % Links
+    for i = 1:length(links)
+        links{i}.update(nodes);
     end
-end
-
-
-
-
-
-
-              
-              
-              
-              
-              
+end             
               
               
               

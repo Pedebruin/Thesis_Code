@@ -1,4 +1,4 @@
-function [K,M,R,nodes,links,beam] = buildBeam(L,h,N,E,mu,rho,alpha,beta)
+function [K,M,R,nodes,links,beam] = buildBeam(L,h,N,E,mu,rho,alpha,beta,plotSettings)
 %% Set up the model using PDE toolbox!
 % This approach uses the meshing tool form the pde toolbox to mesh a
 % geometry also defined in this file. 
@@ -6,7 +6,7 @@ function [K,M,R,nodes,links,beam] = buildBeam(L,h,N,E,mu,rho,alpha,beta)
 % Outputs: Mesh matrices, nodal vector and also the entire beam model
 
     % Create container
-    beam = createpde('structural','frequency-planestress');
+    beam = createpde('structural','modal-planestress');
 
     % Define Geometry
     rects = zeros(10,N-1);
@@ -37,8 +37,8 @@ function [K,M,R,nodes,links,beam] = buildBeam(L,h,N,E,mu,rho,alpha,beta)
     structuralProperties(beam,'YoungsModulus', E, ...
                                'PoissonsRatio', mu,...
                                'massDensity', rho);
-    structuralDamping(beam,'Alpha',alpha,...
-                            'Beta',beta);
+    %structuralDamping(beam,'Alpha',alpha,...
+    %                        'Beta',beta);
 
     % Set up boundary conditions
     structuralBC(beam,'edge',1,'Constraint','fixed');
@@ -47,7 +47,7 @@ function [K,M,R,nodes,links,beam] = buildBeam(L,h,N,E,mu,rho,alpha,beta)
     generateMesh(beam,'Hmax',L/N,...
                         'Hmin',L/N,...
                         'GeometricOrder','linear');
-        pdeplot(beam,'NodeLabels','on'); % You can  plot the mesh if you want to
+
 
     % Obtain the FEM matrices!
     FEM = assembleFEMatrices(beam,'KMR');
@@ -87,5 +87,12 @@ function [K,M,R,nodes,links,beam] = buildBeam(L,h,N,E,mu,rho,alpha,beta)
                 k = k+1;
             end
         end
-    end  
+    end 
+    
+%% Solve system for eigenmodes, just to check
+    if plotSettings.realMesh == true
+         pdeplot(beam,'NodeLabels','on'); % You can  plot the mesh if you want to
+         modal = solve(beam,'FrequencyRange',[-0.1,100]);
+         
+    end
 end

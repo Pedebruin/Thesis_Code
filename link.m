@@ -16,6 +16,17 @@ classdef link < handle & dynamicprops & matlab.mixin.Copyable
             obj.pos = initPos;
         end
         
+        % update(), Updates the position of the link
+        function update(obj,nodes)
+            n1 = obj.neighbours(1);
+            n2 = obj.neighbours(2);
+            
+            from = nodes{n1}.pos;
+            to = nodes{n2}.pos;         
+            
+            obj.pos = [from, to];
+        end
+        
         % plotLink()
         function P = plotLink(obj,axName,color)
             if isempty(axName)
@@ -41,7 +52,6 @@ classdef link < handle & dynamicprops & matlab.mixin.Copyable
             y = (obj.pos(2,1)+obj.pos(2,2))/2;
             P = text(x, y, num2str(obj.number),'color',color,...
                                             'HorizontalAlignment','left');
-
         end
    end
 end

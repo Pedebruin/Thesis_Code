@@ -16,6 +16,13 @@ classdef node < handle & dynamicprops & matlab.mixin.Copyable
             obj.pos = initPos;
         end
         
+        % update(), Updates the position of the node with the displacement
+        function update(obj,q)
+            d(1) = q(obj.number);
+            d(2) = q(obj.number+length(q)/2);
+            obj.pos = obj.initPos + d';
+        end
+        
         % plotNode(), Plot the node in current location
         function P = plotNode(obj,axName,color)
             if isempty(axName)
