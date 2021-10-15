@@ -1,14 +1,6 @@
-function plotBeam(nodes,links,plotSettings)
+function P = plotBeam(nodes,links,plotSettings,ax)
     numNodes = length(nodes);
     numLinks = length(links);
-    
-    figure()
-    hold on
-    axis equal
-    xlabel 'mm'
-    ylabel 'mm'
-    title 'Beam plot'
-    ax = gca;
     P = [];
 
     % Plot Links

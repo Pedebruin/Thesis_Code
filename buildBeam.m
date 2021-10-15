@@ -1,4 +1,4 @@
-function [K,M,R,nodes,links,beam] = buildBeam(L,h,N,E,mu,rho,alpha,beta,plotSettings)
+function [FEM,nodes,links,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings)
 %% Set up the model using PDE toolbox!
 % This approach uses the meshing tool form the pde toolbox to mesh a
 % geometry also defined in this file. 
@@ -37,9 +37,6 @@ function [K,M,R,nodes,links,beam] = buildBeam(L,h,N,E,mu,rho,alpha,beta,plotSett
     structuralProperties(beam,'YoungsModulus', E, ...
                                'PoissonsRatio', mu,...
                                'massDensity', rho);
-    %structuralDamping(beam,'Alpha',alpha,...
-    %                        'Beta',beta);
-
     % Set up boundary conditions
     structuralBC(beam,'edge',1,'Constraint','fixed');
 
@@ -48,21 +45,23 @@ function [K,M,R,nodes,links,beam] = buildBeam(L,h,N,E,mu,rho,alpha,beta,plotSett
                         'Hmin',L/N,...
                         'GeometricOrder','linear');
 
-
     % Obtain the FEM matrices!
-    FEM = assembleFEMatrices(beam,'KMR');
-
+    FEM = assembleFEMatrices(beam);
     K = FEM.K;
-    M = FEM.M;
-    R = FEM.R;
+    
+%% Plot original mesh (Just for validation)
+    if plotSettings.realMesh == true
+         pdeplot(beam,'NodeLabels','on'); % You can  plot the mesh if you want to         
+    end
     
 %% ALso get the nodes for plotting and stuff
     numNodes = size(beam.Mesh.Nodes,2);
+    numFreeNodes = size(K,1)/2;
     nodes = {};
     
-    connections = K~=0;
-    connections = full(connections(1:numNodes,1:numNodes));
-    
+    connections = abs(K)>0;
+    connections = full(connections(1:numFreeNodes,1:numFreeNodes));
+
     for i = 1:numNodes
         neighbours = find(connections(i,:));  % Neighbouring nodes
 
@@ -88,11 +87,4 @@ function [K,M,R,nodes,links,beam] = buildBeam(L,h,N,E,mu,rho,alpha,beta,plotSett
             end
         end
     end 
-    
-%% Solve system for eigenmodes, just to check
-    if plotSettings.realMesh == true
-         pdeplot(beam,'NodeLabels','on'); % You can  plot the mesh if you want to
-         modal = solve(beam,'FrequencyRange',[-0.1,100]);
-         
-    end
 end

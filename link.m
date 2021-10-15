@@ -37,6 +37,11 @@ classdef link < handle & dynamicprops & matlab.mixin.Copyable
             end
             x = [obj.pos(1,1),obj.pos(1,2)];
             y = [obj.pos(2,1),obj.pos(2,2)];
+            
+            if x(1)<x(2)
+                x = flip(x);
+                y = flip(y);
+            end
             P = plot(x,y,'-','color',color);
         end
         
