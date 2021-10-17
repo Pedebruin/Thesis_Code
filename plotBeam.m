@@ -1,11 +1,11 @@
-function P = plotBeam(nodes,links,faces,plotSettings,ax)
+function P = plotBeam(nodes,links,faces,plotSettings,simulationSettings,ax)
     numNodes = length(nodes);
     numLinks = length(links);
     numFaces = length(faces);
     P = [];
     
     if plotSettings.fill == true
-        cm = colormap(turbo);
+        colormap(turbo);
         x = zeros(numNodes,1);
         y = zeros(numNodes,1);
         
@@ -23,7 +23,7 @@ function P = plotBeam(nodes,links,faces,plotSettings,ax)
         
         switch plotSettings.color
             case {'disp'}
-                caxis([0,15])
+                caxis([0,7.5])
                 colorbar(ax)
                 disp = zeros(numNodes,1);
                 for i = 1:numNodes
@@ -34,12 +34,17 @@ function P = plotBeam(nodes,links,faces,plotSettings,ax)
                 FaceColor = 'interp';  
                 
             case {'deform'}
-                caxis([0,1.5])
+                caxis([0,5e-4])
                 deform = zeros(numLinks,1);
                 for i = 1:numLinks
                     deform(i) = links{i}.deform;
                 end
-                NodeColor = abs(deform)/max(deform);
+                
+                d = zeros(numNodes,1);
+                for i = 1:numNodes
+                    d(i) = mean(deform(nodes{i}.neighbours));
+                end
+                NodeColor = abs(d);
                 EdgeColor = 'interp';
                 FaceColor = 'interp';
 
