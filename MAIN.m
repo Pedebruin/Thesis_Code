@@ -7,37 +7,44 @@ set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',12);
 L = 300;    % mm
 h = 2;     % mm
 
-N = 10;%L/h;      % Number of Vertical Nodes (minimum 2)
+N = 10; %L/h;      % Number of Vertical Nodes (minimum 2)
 
 E = 210E9;
 mu = 0.3;
 rho = 7800;
-alpha = 10;
-beta = 2;
-zeta = 0.1;
+alpha = 0.001599;         % For modal damping
+beta = 0.001595;           % For modal damping
+zeta = 0.005;        % For proportional damping
 
+% Simulation settings
 simulationSettings.simulate = true;
     simulationSettings.damping = true;
-    simulationSettings.dampingModel = 'modal';
-    simulationSettings.T = 25;       % s
+    simulationSettings.dampingModel = 'proportional';
+    simulationSettings.T = 15;       % s
     simulationSettings.dt = 0.1;   % s 
     simulationSettings.plot = true;
 
-% Settings
-plotSettings.realMesh = false;
-plotSettings.modalAnalysis = false;
-    plotSettings.modeNr = 3;
+% Single mode plot settings
+plotSettings.modalAnalysis = true;          % Single plot with a specific mode
+    plotSettings.modeNr = 1;
     plotSettings.A = 1e4;
-plotSettings.nodes = true;
-plotSettings.nodeNumbers = false;
-plotSettings.links = true;
-plotSettings.linkNumbers = false;
+
+% Plot settings
+plotSettings.realMesh = false;               % Make an extra plot with the original Mesh
+plotSettings.color = 'disp';        % 'disp' for displacement or 'deform' for deformation or 'none'
+    plotSettings.fill = true;                   % Fill the beam with patch
+plotSettings.nodes = false;
+    plotSettings.nodeColor = 'k';
+    plotSettings.nodeNumbers = false;
+plotSettings.links = false;
+    plotSettings.linkNumbers = false;
 
 
 % build FEM model of the beam
-[FEM,nodes,links,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings);
+[FEM,nodes,links,faces,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings);
 numNodes = length(nodes);
 numLinks = length(links);
+numFaces = length(faces);
 
 K = FEM.K;
 M = FEM.M;
@@ -56,11 +63,13 @@ Phi = Phi/(Phi'*M*Phi);
 
 % Obtain modal system matrices
 omegaSq = Phi'*K*Phi;                                           % Omega^2
-if strcmp(simulationSettings.dampingModel,'modal')              % Cphi
-    Cphi = diag(2*zeta*modal.NaturalFrequencies);
-elseif strcmp(simulationSettings.dampingModel,'proportional')
-    Cphi = alpha*eye(Nmodes)+beta*omegaSq;              
+switch simulationSettings.dampingModel
+    case {'modal'}
+        Cphi = diag(2*zeta*modal.NaturalFrequencies);
+    case {'proportional'}
+        Cphi = alpha*eye(Nmodes)+beta*omegaSq;
 end
+
 Rext = zeros(numNodes*2,1);                                 % External Input
 Rphi = Phi'*Rext;                                         
 
@@ -68,8 +77,8 @@ Rphi = Phi'*Rext;
 %% Time simulation
 if simulationSettings.simulate ==  true
     z0 = zeros(Nmodes,1);
-    z0(2) = 4e4;
-    z0(1) = 2e4;
+    z0(2) = 4e3;
+    z0(1) = 2e3;
     tvec = 0:simulationSettings.dt:simulationSettings.T;
 
     % y -> [z;zdot];!!!!!
@@ -88,26 +97,30 @@ if simulationSettings.simulate ==  true
         grid on
         xlabel 'mm'
         ylabel 'mm'
-        xlim([0,1.2*L])
-        ylim([-L/6,L/6])
+        xlim([-L/6,L/6])
+        ylim([0,1.2*L])
         title 'Beam plot'
         ax = gca;
         simPlots = [];
         for i = 1:length(t)
+            tstart = tic;
             d = Phi*z(:,i);
 
             % Update Beam
-            updateBeam(links,nodes,d);
+            updateBeam(links,nodes,faces,d);
 
             if ~isempty(simPlots)
                 delete(simPlots)
             end
 
             % Plot beam
-            simPlots = plotBeam(nodes,links,plotSettings,ax); 
-            P = text(ax, L/3*2,L/6*2,['Time; ',num2str(t(i)),'/',num2str(t(end)),' s']);
+            simPlots = plotBeam(nodes,links,faces,plotSettings,ax); 
+            P = text(ax, 0,L*1.1,['Time: ',num2str(round(t(i),1)),'/',num2str(t(end)),' s'],...
+                                                        'HorizontalAlignment','center');
             simPlots = [simPlots, P];
-            pause(0.01);
+            
+            elapsed = toc(tstart);
+            pause(max(simulationSettings.dt-elapsed,0));
         end 
     end
 end
@@ -118,7 +131,7 @@ if plotSettings.modalAnalysis == true
     A = plotSettings.A;
 
     % Update Beam
-    updateBeam(links,nodes,A*Phi(:,nr));
+    updateBeam(links,nodes,faces,A*Phi(:,nr));
 
     % Plot beam
     figure()
@@ -126,10 +139,11 @@ if plotSettings.modalAnalysis == true
     axis equal
     xlabel 'mm'
     ylabel 'mm'
+    grid on
     title 'Beam plot'
     ax = gca;
     
-    plotBeam(nodes,links,plotSettings,ax);
+    plotBeam(nodes,links,faces,plotSettings,ax);
 end
 
 %% Functions
@@ -139,9 +153,8 @@ function yd = sysFun(t,y,A,B)
 yd = A*y+B;
 end
 
-function [links,nodes] =  updateBeam(links,nodes,q)
+function [links,nodes] =  updateBeam(links,nodes,faces,q)
     numNodes = length(nodes);
-    % Update beam
     % Nodes
     for i = 1:numNodes
         nodes{i}.update(q);
@@ -149,6 +162,10 @@ function [links,nodes] =  updateBeam(links,nodes,q)
     % Links
     for i = 1:length(links)
         links{i}.update(nodes);
+    end
+    % Faces
+    for i = 1:length(faces)
+        faces{i}.update(nodes);
     end
 end             
               

@@ -5,6 +5,8 @@ classdef link < handle & dynamicprops & matlab.mixin.Copyable
         neighbours;                         % Neighbours
         initPos;
         pos;
+        L0;                                 % Original Length
+        deform;                             % Elongation of the link
     end
    
     methods
@@ -14,6 +16,8 @@ classdef link < handle & dynamicprops & matlab.mixin.Copyable
             obj.neighbours = neighbours;
             obj.initPos = initPos;
             obj.pos = initPos;
+            obj.L0 = norm(obj.initPos(:,1)-obj.initPos(:,2));
+            obj.deform = (norm(obj.pos(:,1)-obj.pos(:,2))-obj.L0)/obj.L0;
         end
         
         % update(), Updates the position of the link
@@ -25,6 +29,7 @@ classdef link < handle & dynamicprops & matlab.mixin.Copyable
             to = nodes{n2}.pos;         
             
             obj.pos = [from, to];
+            obj.deform = (norm(obj.pos(:,1)-obj.pos(:,2))-obj.L0)/obj.L0;
         end
         
         % plotLink()
