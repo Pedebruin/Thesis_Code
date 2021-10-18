@@ -1,4 +1,4 @@
-function [FEM,nodes,links,faces,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings)
+function [FEM,nodes,links,faces,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings,simulationSettings)
 %% Set up the model using PDE toolbox!
 % This approach uses the meshing tool form the pde toolbox to mesh a
 % geometry also defined in this file. 
@@ -14,7 +14,6 @@ function [FEM,nodes,links,faces,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings)
     sf = [];
     for i = 1:N-1
         rects(:,i) = [3,4,-h/2,h/2,h/2,-h/2,(i-1)*L/(N-1),(i-1)*L/(N-1),i*L/(N-1),i*L/(N-1)]';
-        %rects(:,i) = [3,4,(i-1)*L/(N-1),(i-1)*L/(N-1),i*L/(N-1),i*L/(N-1),0, h, h, 0]';
         if length(num2str(i))==1
             n = ['Seg','00',num2str(i)];
         elseif length(num2str(i)) == 2
@@ -38,16 +37,16 @@ function [FEM,nodes,links,faces,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings)
     structuralProperties(beam,'YoungsModulus', E, ...
                                'PoissonsRatio', mu,...
                                'massDensity', rho);
-    % Set up boundary conditions
-    structuralBC(beam,'edge',1,'Constraint','fixed');
 
+    structuralBC(beam,'edge',1,'Constraint','roller');
+ 
     % Generate Mesh
     generateMesh(beam,'Hmax',L/N,...
                         'Hmin',L/N,...
                         'GeometricOrder','linear');
 
     % Obtain the FEM matrices!
-    FEM = assembleFEMatrices(beam);
+    FEM = assembleFEMatrices(beam,'KM');
     
 %% Plot original mesh (Just for validation)
     if plotSettings.realMesh == true

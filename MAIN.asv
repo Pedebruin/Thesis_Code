@@ -6,7 +6,6 @@ set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',12);
 % Parameters
 L = 370;                    % mm
 h = 2;                      % mm
-b = 40;                     % mm
 
 N = 20; %L/h;      % Number of Vertical Nodes (minimum 2)
 
@@ -17,7 +16,7 @@ alpha = 0.001599;           % For proportional damping
 beta = 0.001595;            % For proportional damping
 zeta = 0.01;                % For modal damping
 
-wmax = 10000;                 % Maximum frequency to include in modal decomposition
+wmax = 100;                 % Maximum frequency to include in modal decomposition
 
 % Simulation settings
 simulationSettings.simulate = true;
@@ -26,7 +25,7 @@ simulationSettings.simulate = true;
         simulationSettings.pauseStart = false;
     simulationSettings.stepTime = 1;            % s
     simulationSettings.dampingModel = 'modal';  % 'Modal','proportional' or 'none'
-    simulationSettings.Kbase = 1e10;
+    simulationSettings.Kbase = 1e15;
     simulationSettings.T = 15;          % s
     simulationSettings.dt = 0.01;       % s 
     
