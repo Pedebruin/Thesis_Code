@@ -1,4 +1,4 @@
-function [FEM,nodes,links,faces,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings,simulationSettings)
+function [FEM,nodes,links,faces,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings)
 %% Set up the model using PDE toolbox!
 % This approach uses the meshing tool form the pde toolbox to mesh a
 % geometry also defined in this file. 

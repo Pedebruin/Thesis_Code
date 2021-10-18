@@ -8,16 +8,16 @@ L = 370;                    % mm
 h = 2;                      % mm
 b = 40;                     % mm
 
-N = 20; %L/h;      % Number of Vertical Nodes (minimum 2)
+N = L/h;               % Number of Vertical Nodes (minimum 2)
 
-E = 70E9;                  % E modulus
+E = 70E9;                   % E modulus
 mu = 0.3;                   % Poisson
 rho = 2700;                 % Mass density
 alpha = 0.001599;           % For proportional damping
 beta = 0.001595;            % For proportional damping
 zeta = 0.01;                % For modal damping
 
-wmax = 10000;                 % Maximum frequency to include in modal decomposition
+wmax = 10000;               % Maximum frequency to include in modal decomposition
 
 % Simulation settings
 simulationSettings.simulate = true;
@@ -51,7 +51,7 @@ plotSettings.sensorPlot = true;                 % plot the sensor output
 
 
 %% build FEM model of the beam
-[FEM,nodes,links,faces,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings,simulationSettings);
+[FEM,nodes,links,faces,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings);
 numNodes = length(nodes);
 numLinks = length(links);
 numFaces = length(faces);
@@ -65,6 +65,9 @@ wmin = -0.1;
 % Modal decomposition! P395
 modal = solve(beam,'FrequencyRange',[wmin,wmax]);   % Solve
 Nmodes = length(modal.NaturalFrequencies);
+
+I = h^3/12;
+analyticalOmega1 = 3.516*sqrt(E*I/(L^4*(rho*h)))/(2*pi);
 
 % Find node to sense!
 nodesxy = beam.Mesh.Nodes;
@@ -177,6 +180,7 @@ if simulationSettings.simulate ==  true
         plotoptions.YLabel.Interpreter = 'latex';
         plotoptions.XLabel.FontSize = 9;
         plotoptions.YLabel.FontSize = 9;
+        plotoptions.FreqUnits = 'Hz';
       
         setoptions(h,plotoptions);
             
