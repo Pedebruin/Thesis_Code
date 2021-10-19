@@ -8,7 +8,7 @@ L = 370;                    % mm
 h = 2;                      % mm
 b = 40;                     % mm
 
-N = L/h;               % Number of Vertical Nodes (minimum 2)
+N = 100;%L/h;               % Number of Vertical Nodes (minimum 2)
 
 E = 70E9;                   % E modulus
 mu = 0.3;                   % Poisson
