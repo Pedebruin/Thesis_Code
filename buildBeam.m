@@ -1,10 +1,11 @@
-function [FEM,nodes,links,faces,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings)
+function [FEM,nodes,links,faces,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings,simulationSettings)
 %% Set up the model using PDE toolbox!
 % This approach uses the meshing tool form the pde toolbox to mesh a
 % geometry also defined in this file. 
 % Inputs: Parameters of the beam
 % Outputs: Mesh matrices, nodal vector and also the entire beam model
-
+    disp('Building Beam...')
+    
     % Create container
     beam = createpde('structural','modal-planestress');
 
@@ -38,12 +39,19 @@ function [FEM,nodes,links,faces,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings)
                                'PoissonsRatio', mu,...
                                'massDensity', rho);
 
-    structuralBC(beam,'edge',1,'Constraint','roller');
+    switch simulationSettings.Input
+        case 'force'
+            structuralBC(beam,'edge',1,'Constraint','fixed');
+        case 'disp'
+            structuralBC(beam,'edge',1,'Constraint','roller');
+    end
+    
+
  
     % Generate Mesh
     generateMesh(beam,'Hmax',L/N,...
                         'Hmin',L/N,...
-                        'GeometricOrder','linear');
+                        'GeometricOrder','quadratic');
 
     % Obtain the FEM matrices!
     FEM = assembleFEMatrices(beam,'KM');

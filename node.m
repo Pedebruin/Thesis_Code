@@ -35,7 +35,7 @@ classdef node < handle & dynamicprops & matlab.mixin.Copyable
                 axis equal
                 axName = gca;
             end 
-            P = plot(obj.pos(1),obj.pos(2),'.','color',color);
+            P = plot(axName,obj.pos(1),obj.pos(2),'.','color',color);
         end
         
         % plotNodeName(), Plot the name next to the node
@@ -46,7 +46,7 @@ classdef node < handle & dynamicprops & matlab.mixin.Copyable
                 axis equal
                 axName = gca;
             end     
-            P = text(obj.pos(1), obj.pos(2), num2str(obj.number),'color',color,...
+            P = text(axName,obj.pos(1), obj.pos(2), num2str(obj.number),'color',color,...
                                                             'VerticalAlignment','bottom');
         end
    end

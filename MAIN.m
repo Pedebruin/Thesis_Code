@@ -4,54 +4,58 @@ set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',12);
 
 %% Parameters & Settings
 % Parameters
-L = 370;                    % mm
-h = 2;                      % mm
-b = 40;                     % mm
+L = 370e-3;                    % m
+h = 2e-3;                      % m
+b = 40e-3;                     % m
 
-N = 100;%L/h;               % Number of Vertical Nodes (minimum 2)
+N = 65; %L/h;                    % Number of Vertical Nodes (minimum 2) (Accurate from around 65)
 
-E = 70E9;                   % E modulus
-mu = 0.3;                   % Poisson
-rho = 2700;                 % Mass density
-alpha = 0.001599;           % For proportional damping
-beta = 0.001595;            % For proportional damping
+E = 70E9;                  % E modulus
+mu = 0.334;                   % Poisson
+rho = 2710;                 % Mass density
+
+alphaC = 0.001599;          % For proportional damping
+betaC = 0.001595;           % For proportional damping
 zeta = 0.01;                % For modal damping
 
-wmax = 10000;               % Maximum frequency to include in modal decomposition
+wmax = 1e4*(2*pi);               % Maximum frequency to include in modal decomposition
 
 % Simulation settings
 simulationSettings.simulate = true;
     simulationSettings.plot = true;
     simulationSettings.animate = false;
         simulationSettings.pauseStart = false;
-    simulationSettings.stepTime = 1;            % s
-    simulationSettings.dampingModel = 'modal';  % 'Modal','proportional' or 'none'
-    simulationSettings.Kbase = 1e10;
-    simulationSettings.T = 15;          % s
-    simulationSettings.dt = 0.01;       % s 
+    simulationSettings.stepTime = 0.5;              % s
+    simulationSettings.dampingModel = 'modal';      % 'Modal','proportional' or 'none'
+    simulationSettings.Input = 'disp';              % 'force' for force input, or 'disp' for disp input   
+        simulationSettings.Kbase = 1e10;            % only in 'disp' mode
+    simulationSettings.T = 5;                       % s
+    simulationSettings.dt = 0.01;                   % s 
     
-    simulationSettings.measurementHeight = 0.75;    % x*L
+    simulationSettings.measurementHeight = 0.95;    % []*L
         
+% Plot settings
 % Single mode plot settings
 plotSettings.modalAnalysis = false;          % Single plot with a specific mode
     plotSettings.modeNr = 2;
-    plotSettings.A = 1e4;
-
-% Plot settings
+    plotSettings.A = 0.5;
+    
+% Beam, measurement and bode plot
 plotSettings.realMesh = false;                  % Make an extra plot with the original Mesh
 plotSettings.color = 'none';                    % 'disp' for displacement or 'deform' for deformation or 'none'
     plotSettings.fill = true;                   % Fill the beam with patch
 plotSettings.nodes = false;                     % Plot the nodes 
-    plotSettings.nodeColor = 'k';               % Node color
     plotSettings.nodeNumbers = false;           % Node numbers
-plotSettings.links = true;                     % Plot the links (edges)
+plotSettings.links = false;                     % Plot the links (edges)
     plotSettings.linkNumbers = false;           % link numbers
 plotSettings.sensor = true;                     % plot the sensor
 plotSettings.sensorPlot = true;                 % plot the sensor output
+plotSettings.base = true;                       % Plot the location of the base in the measurement
 
 
 %% build FEM model of the beam
-[FEM,nodes,links,faces,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings);
+disp('Running!-------------------------------------------------------------')
+[FEM,nodes,links,faces,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings,simulationSettings);
 numNodes = length(nodes);
 numLinks = length(links);
 numFaces = length(faces);
@@ -60,14 +64,11 @@ K = FEM.K;
 M = FEM.M;
 
 % Get modal results
-wmin = -0.1;
+wmin = -0.1;    % -0.1 rad/s to capture everything from 0 ->
 
 % Modal decomposition! P395
 modal = solve(beam,'FrequencyRange',[wmin,wmax]);   % Solve
 Nmodes = length(modal.NaturalFrequencies);
-
-I = h^3/12;
-analyticalOmega1 = 3.516*sqrt(E*I/(L^4*(rho*h)))/(2*pi);
 
 % Find node to sense!
 nodesxy = beam.Mesh.Nodes;
@@ -86,16 +87,20 @@ simulationSettings.interpPoint = [interpNodes,[alpha;
                                                                      
 % Setup Model
 % Input
-Bd = zeros(numNodes*2,1);                                   % External Input matrix in d space
-Bd(1) = 1;                                                  % Force on node 1 in x;                                                 
-Bd(2) = 1;                                                  % Force on node 2 in x;
+Bd = zeros(numNodes*2,2);                                       % External Input matrix in d space
+Bd(1,2) = 1;                                                    % Force on node 1 in x; (Force input)                                                
+Bd(2,2) = 1;                                                    % Force on node 2 in x; (Force input)
+Bd(3,1) = 1;                                                    % Force on node 3 in x; (Base Force)
+Bd(4,1) = 1;                                                    % Force on node 4 in x, (Base Force)
 
 % Output
-Cd = zeros(1,numNodes*2);                                   % Measurement matrix in d space
-Cd(interpNodes(:,1)) = [1-alpha;alpha];                     % Measure at selected point
+Cd = zeros(2,numNodes*2);                                       % Measurement matrix in d space
+Cd(1,interpNodes(:,1)) = [1-alpha;alpha];                       % Measure at selected point
+Cd(2,1) = 1;                                                    % Measure base displacement
+
 
 %% modal system modelling
-Phi = [modal.ModeShapes.ux;                         % Phi
+Phi = [modal.ModeShapes.ux;                                     % Phi
     modal.ModeShapes.uy];
 Phi = Phi/(Phi'*M*Phi);
 
@@ -106,57 +111,98 @@ switch simulationSettings.dampingModel                          % Damping matic 
     case {'modal'}
         C_phi = diag(2*zeta*modal.NaturalFrequencies);
     case {'proportional'}
-        C_phi = alpha*eye(Nmodes)+beta*omegaSq;
+        C_phi = alphaC*eye(Nmodes)+betaC*omegaSq;
     case {'none'}
         C_phi = zeros(Nmodes);
 end
  
-Rphi = Phi'*Bd;                                             % Modal input matrix
-Cphi = Cd*Phi;                                              % Modal measurement
+Rphi = Phi'*Bd;                                                     % Modal input matrix
+Cphi = Cd*Phi;                                                      % Modal measurement
 
 % Assemble new system for modal
-A_modal = [zeros(Nmodes), eye(Nmodes);                            % Dynamics
+A_modal = [zeros(Nmodes), eye(Nmodes);                              % Dynamics
      -omegaSq,-C_phi];
-B_modal = [zeros(Nmodes,1);Rphi];                                 % External input
-C_modal = [Cphi,zeros(1,Nmodes)];                                 % Measurement
-D_modal = 0;                                                % Assume no direct feedthrough
+B_modal = [zeros(Nmodes,2);Rphi];                                   % External input
+C_modal = [Cphi,zeros(2,Nmodes)];                                   % Measurement
+D_modal = 0;                                                        % Assume no direct feedthrough
+SS_modal = ss(A_modal,B_modal,C_modal,D_modal);                     % 2x2 system!
+SS_modal.OutputName = {'Sensor out','Base out'};
+SS_modal.Inputname = {'Force in','Base in'};
 
-SS_force = ss(A_modal,B_modal,C_modal,D_modal);
 
-% Apply stiff spring to base   
-Ck = zeros(1,numNodes*2);               % Ficticious measurement matrix
-Ck(1) = 1;                              % measure displacement of node 1
-K_spring = simulationSettings.Kbase*[Ck*Phi,zeros(1,Nmodes)];    % get stiffness matrix
+% Apply stiff spring to base  
+switch simulationSettings.Input
+    case {'force'}
+        % The base is fixed, so no input can be given there. The input is
+        % thus chosen as a force at the tip. in x direction.
+        SS_modal = SS_modal(1,[1,2]);
+        
+    case {'disp'}
+        % To get the input of the system bo be the displacement of the base
+        % of the beam, it needs to be fixed by a stiff spring. This is done
+        % by applying state feedback with a gain representing a spring
+        % constant. 
 
-A_modal = A_modal-B_modal*K_spring;   % Apply feedback to simulate spring
+        K_spring = ss(simulationSettings.Kbase);    % get stiffness matrix
 
-% Get system! The system now has a state vector q = [z;zdot]; and an input
-% r which is the reference location of node 1. 
-SS_modal = ss(A_modal,B_modal,C_modal,D_modal);
-gain = dcgain(SS_modal);
-B_modal = B_modal/gain;
-SS_modal.B = B_modal;
+        SS_modal = feedback(SS_modal,K_spring,2,2,-1);
+        DCgain = dcgain(SS_modal(1,2));
+        SS_modal.B = [B_modal(:,1),B_modal(:,2)/DCgain];
+
+        SS_modal = SS_modal(1,[1,2]);               % From [F,r] to sensor out. 
+        SS_modal.Inputname = {'Force in','base Ref'};
+end
+
+% Check first eigenfrequency!
+disp('Checking model...')
+I = (b*h^3)/12;
+A = b*h;
+lambda = 1.87510407;
+analyticalOmega1 = lambda^2/(2*pi*L^2)*sqrt(E*I/(rho*A));
+switch simulationSettings.Input
+    case {'force'}
+        errPercentage = abs(analyticalOmega1 - modal.NaturalFrequencies(1)/(2*pi))/analyticalOmega1*100;
+        
+    case {'disp'}
+        [~,fpeak] = hinfnorm(SS_modal(1,1));
+        errPercentage = abs(analyticalOmega1 - fpeak/(2*pi))/analyticalOmega1*100;
+end
+if errPercentage > 0.1 % greater then [] procent error in first eigenfrequency!
+    warning(['First eigenfrequency does not correspond, use more nodes!',newline...
+            'err = ',num2str(round(errPercentage,3)),'%!']);
+end
 
 %% Time simulation
 if simulationSettings.simulate ==  true
+    disp('Simulating...')
     tvec = 0:simulationSettings.dt:simulationSettings.T;
     
     % Time simulation!
     q0 = zeros(Nmodes*2,1);
-    [t,y] = ode45(@(t,z) sysFun(t,z,A_modal,B_modal,simulationSettings),tvec,q0);
+    Asim = SS_modal.A;
+    Bsim = SS_modal.B;
+    [t,y] = ode45(@(t,z) sysFun(t,z,Asim,Bsim,simulationSettings),tvec,q0);
     z = y';
-    output = C_modal*z;
-    baseLocation = [Ck*Phi,zeros(1,Nmodes)]*z;
+    output = SS_modal.C*z;
+    baseLocation = [Cphi(2,:),zeros(1,Nmodes)]*z;
+   switch simulationSettings.Input
+        case {'force'}
+            plotSettings.base = false;
+        case {'disp'}
+    end
     
     if simulationSettings.plot == true
+        disp('Plotting simulation...')
         figure()
+        %sgtitle(['Beam with ',simulationSettings.Input,' input'])
         subplot(4,3,[1,4,7,10])
             hold on
-            axis equal
             grid on
-            xlabel 'mm'
-            ylabel 'mm'
-            xlim([-L/6,L/6])
+            xlabel 'm'
+            ylabel 'm'
+            axis equal
+            xlim([-L/6,L/6]);
+%             xlim([-h*4,h*4])
             ylim([0,1.2*L])
             title 'Beam plot'
             beamAx = gca;
@@ -164,6 +210,7 @@ if simulationSettings.simulate ==  true
             hold on
             grid on
             xlabel 'time [s]'
+            ylabel 'displasement [mm]'
             title 'Laser Measurement'
             measurementAx = gca;
             xlim([0,simulationSettings.T]);
@@ -171,9 +218,9 @@ if simulationSettings.simulate ==  true
             bodeAx = gca;
             
         % Plot bode
-        h = bodeplot(bodeAx,SS_modal);
+        bod = bodeplot(bodeAx,SS_modal(1,1));
         
-        plotoptions = getoptions(h);
+        plotoptions = getoptions(bod);
         plotoptions.Title.String = '';
         plotoptions.Title.Interpreter = 'latex';
         plotoptions.XLabel.Interpreter = 'latex';
@@ -181,8 +228,12 @@ if simulationSettings.simulate ==  true
         plotoptions.XLabel.FontSize = 9;
         plotoptions.YLabel.FontSize = 9;
         plotoptions.FreqUnits = 'Hz';
+        plotOptions.grid = 'on';
+        plotOptions.PhaseWrapping = 'off';
+        plotOptions.XLimMode = {'manual','manual'};
+        plotOptions.XLim = {[0,wmax/(2*pi)]};
       
-        setoptions(h,plotoptions);
+        setoptions(bod,plotoptions);
             
         simPlots = [];
         measurement = zeros(2,length(t));        
@@ -192,6 +243,8 @@ if simulationSettings.simulate ==  true
         else
             Nsteps = 1;
         end
+
+        % Run animation loop! (Only once if animate is turned off)
         for i = 1:Nsteps
             tstart = tic;
             d = Phi*z(1:Nmodes,i);
@@ -210,29 +263,50 @@ if simulationSettings.simulate ==  true
                                                         'HorizontalAlignment','center');
             simPlots = [simPlots, timeText];
             
-            % Plot laser measurement
+            % Plot laser
             if plotSettings.sensor == true
-                laser = plot(beamAx,[beamAx.XLim(1) output(i)],[1,1]*simulationSettings.measurementHeight*L,'r','lineWidth',2);
+                laser = plot(beamAx,[beamAx.XLim(1) output(i)-h/2],[1,1]*simulationSettings.measurementHeight*L,'r','lineWidth',2);
                 simPlots = [simPlots, laser];
             end
             
+            % Plot laser measurement
             if plotSettings.sensorPlot == true
                 if simulationSettings.animate == true
                     if i > 1
                         xs = [t(i-1),t(i)];
                         ys = [output(i-1),output(i)];
+                        if plotSettings.base == true
+                            yb = [baseLocation(i-1),baseLocation(i)];
+                        end
                     else
                         xs = t(i);
                         ys = output(i);
+                        yb = baseLocation(i);
                     end
                 else
                     xs = t;
                     ys = output;
+                    yb = baseLocation;
                 end
-
+                    if plotSettings.base == true
+                        basePlot = plot(measurementAx,xs,yb,'r');
+                    end
                     sensorPlot = plot(measurementAx,xs,ys,'color',[0.3010 0.7450 0.9330]);
             end
             
+            % Plot input and output as dots
+            inputNodes = find(Bd);
+            inputNode = inputNodes(1);
+            
+            inputN = plot(beamAx,nodes{inputNode}.pos(1),nodes{inputNode}.pos(2),'g.','MarkerSize',12);
+            simPlots = [simPlots, inputN];
+            
+            alpha = simulationSettings.interpPoint(1,3);
+            interpNodes = simulationSettings.interpPoint(:,2);
+            
+            outputNode = interpNodes(1)+alpha*(interpNodes(2)-interpNodes(1));
+            outputN = plot(beamAx,output(i)-h/2,outputNode,'r.','MarkerSize',12);
+            simPlots = [simPlots, outputN];
             drawnow;
             
             % Measure elapsed time and delay
@@ -250,40 +324,74 @@ if simulationSettings.simulate ==  true
 end
 
 
-%% Single mode plot
+%% Mode shape analysis
 if plotSettings.modalAnalysis == true
-    nr = plotSettings.modeNr;
-    A = plotSettings.A;
+disp('Mode analysis plotting...')
+% Plot all mode shapes
+    if Nmodes <= 3
+        i = 1;
+        j = Nmodes;
+    elseif Nmodes > 3 && Nmodes <= 9
+        i = ceil(Nmodes/3);
+        j = 3;
+    elseif Nmodes > 9 && Nmodes <= 12
+        i = 4;
+        j = 3;
+    elseif Nmodes > 12 && Nmodes <= 16
+        i = 4;
+        j = 4;
+    elseif Nmodes > 16 && Nmodes <= 20
+        i = 4;
+        j = 5;
+    else
+        warning('Too many mode shapes to plot!')
+    end
 
-    % Update Beam
-    updateBeam(links,nodes,faces,A*Phi(:,nr));
-
-    % Plot beam
     figure()
+    sgtitle(['First ',num2str(Nmodes),' eigenmodes']);
     hold on
-    axis equal
-    xlabel 'mm'
-    ylabel 'mm'
-    grid on
-    title 'Beam plot'
-    ax = gca;
-    
-    plotBeam(nodes,links,faces,plotSettings,simulationSettings,ax);
-end
+    for k = 1:min(Nmodes,20)
+        subplot(i,j,k)
+            title(['Mode ',num2str(k),': ',num2str(round(modal.NaturalFrequencies(k)/(2*pi),2)),' Hz'])
+            hold on
+            xlabel('m')
+            ylabel('m')
+            grid on
+            axis equal
+            ax = gca;
 
+            % Amplification factor
+            A = plotSettings.A;
+            % Update Beam
+            updateBeam(links,nodes,faces,A*(Phi(:,k)/norm(Phi(:,k))));
+            % Plot Beam
+            plotBeam(nodes,links,faces,plotSettings,simulationSettings,ax);
+    end
+end
+disp('Done!----------------------------------------------------------------')
 
 %% Functions
 % odefun for ode45 etc..
 function qd = sysFun(t,q,A,B,simulationSettings)
-    % Apply Spring to base. with reference r
-    if t > simulationSettings.stepTime
-        r = 1;
-    else
-        r = 0;
-    end
-    
+    % Generic input!
+    switch simulationSettings.Input 
+        case {'force'}
+            r = 0;
+            if t > simulationSettings.stepTime
+                F = 1;
+            else
+                F = 0;
+            end
+        case {'disp'}
+            F = 0;
+            if t > simulationSettings.stepTime
+                r = 1;
+            else
+                r = 0;
+            end
+    end        
     % Evaluate system
-    qd = A*q+B*r;
+    qd = A*q+B*[F,r]';
 end
 
 % Function to update all nodes, links and faces.

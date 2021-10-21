@@ -1,4 +1,10 @@
 function P = plotBeam(nodes,links,faces,plotSettings,simulationSettings,ax)
+    if isempty(ax)
+        figure()
+        hold on
+        axis equal
+        ax = gca;
+    end
     numNodes = length(nodes);
     numLinks = length(links);
     numFaces = length(faces);
@@ -49,7 +55,7 @@ function P = plotBeam(nodes,links,faces,plotSettings,simulationSettings,ax)
                 FaceColor = 'interp';
 
             case {'none'}
-                NodeColor = [];
+                NodeColor = [0.3010 0.7450 0.9330];
                 EdgeColor = [0.3010 0.7450 0.9330];     % A nice blue
                 FaceColor = [0.3010 0.7450 0.9330];
                 
