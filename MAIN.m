@@ -1,3 +1,5 @@
+% This is the main file.
+
 clear all
 close all
 set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',12);  
