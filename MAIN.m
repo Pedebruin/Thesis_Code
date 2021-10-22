@@ -4,23 +4,46 @@ clear all
 close all
 set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',12);  
 
+% Create template objects
+beam = body('Beam');
+sensor = body('Sensor');
+actuator = body('Actuator');
+
 %% Parameters & Settings
-% Parameters
-L = 370e-3;                    % m
-h = 2e-3;                      % m
-b = 40e-3;                     % m
+% beam parameters
+beam.L = 370e-3;                    % m
+beam.h = 2e-3;                      % m
+beam.N = 3;%65; %L/h;                  % Number of Vertical Nodes (minimum 2) (Accurate from around 65)
+beam.E = 70E9;                      % E modulus
+beam.mu = 0.334;                    % Poisson
+beam.rho = 2710;                    % Mass density
+beam.alphaC = 0.001599;             % For proportional damping
+beam.betaC = 0.001595;              % For proportional damping
+beam.zeta = 0.01;                   % For modal damping
 
-N = 65; %L/h;                    % Number of Vertical Nodes (minimum 2) (Accurate from around 65)
+% sensor parameters
+sensor.L = 30e-3;                   % m
+sensor.h = 1e-3;                    % m
+sensor.N = 4;
+sensor.E = 70e9;
+sensor.mu = 0.334;
+sensor.rho = 2710;
+sensor.alphaC = 0.001599;
+sensor.betaC = 0.001595;
+sensor.zeta = 0.01;
 
-E = 70E9;                  % E modulus
-mu = 0.334;                   % Poisson
-rho = 2710;                 % Mass density
+% actuator parameters
+actuator.L = 30e-3;                   % m
+actuator.h = 1e-3;                    % m
+actuator.N = 2;
+actuator.E = 70e9;
+actuator.mu = 0.334;
+actuator.rho = 2710;
+actuator.alphaC = 0.001599;
+actuator.betaC = 0.001595;
+actuator.zeta = 0.01;
 
-alphaC = 0.001599;          % For proportional damping
-betaC = 0.001595;           % For proportional damping
-zeta = 0.01;                % For modal damping
-
-wmax = 1e4*(2*pi);               % Maximum frequency to include in modal decomposition
+wmax = 1e4*(2*pi);                    % Maximum frequency to include in modal decomposition
 
 % Simulation settings
 simulationSettings.simulate = true;
@@ -28,13 +51,16 @@ simulationSettings.simulate = true;
     simulationSettings.animate = false;
         simulationSettings.pauseStart = false;
     simulationSettings.stepTime = 0.5;              % s
-    simulationSettings.dampingModel = 'modal';      % 'Modal','proportional' or 'none'
-    simulationSettings.Input = 'disp';              % 'force' for force input, or 'disp' for disp input   
-        simulationSettings.Kbase = 1e10;            % only in 'disp' mode
     simulationSettings.T = 5;                       % s
     simulationSettings.dt = 0.01;                   % s 
     
-    simulationSettings.measurementHeight = 0.95;    % []*L
+% model settings
+simulationSettings.measurementHeight = 0.95;    % []*L
+simulationSettings.dampingModel = 'modal';      % 'Modal','proportional' or 'none'
+simulationSettings.Input = 'force';             % 'force' for force input, or 'disp' for disp input   
+    simulationSettings.Kbase = 1e10;            % only in 'disp' mode
+simulationSettings.Nsensors = 4;                % number of sensor patches
+simulationSettings.Nactuators = 4;              % number of actuators
         
 % Plot settings
 % Single mode plot settings
@@ -55,12 +81,12 @@ plotSettings.sensorPlot = true;                 % plot the sensor output
 plotSettings.base = true;                       % Plot the location of the base in the measurement
 
 
-%% build FEM model of the beam
+%% Build FEM model of the beam
 disp('Running!-------------------------------------------------------------')
-[FEM,nodes,links,faces,beam] = buildBeam(L,h,N,E,mu,rho,plotSettings,simulationSettings);
-numNodes = length(nodes);
-numLinks = length(links);
-numFaces = length(faces);
+[FEM,beam,PDEbeam] = buildModel(beam,sensor,actuator,plotSettings,simulationSettings);
+numNodes = length(beam.nodes);
+numLinks = length(beam.links);
+numFaces = length(beam.faces);
 
 K = FEM.K;
 M = FEM.M;
@@ -69,12 +95,12 @@ M = FEM.M;
 wmin = -0.1;    % -0.1 rad/s to capture everything from 0 ->
 
 % Modal decomposition! P395
-modal = solve(beam,'FrequencyRange',[wmin,wmax]);   % Solve
+modal = solve(PDEbeam,'FrequencyRange',[wmin,wmax]);   % Solve
 Nmodes = length(modal.NaturalFrequencies);
 
 % Find node to sense!
-nodesxy = beam.Mesh.Nodes;
-measurey = simulationSettings.measurementHeight*L;
+nodesxy = PDEbeam.Mesh.Nodes;
+measurey = simulationSettings.measurementHeight*beam.L;
 temp = [nodesxy(1,:);
         abs(nodesxy(2,:)-measurey);
         1:numNodes;];
@@ -111,9 +137,9 @@ omegaSq = Phi'*K*Phi;                                           % Omega^2
 % Damping matrix C_Phi
 switch simulationSettings.dampingModel                          % Damping matic C_phi
     case {'modal'}
-        C_phi = diag(2*zeta*modal.NaturalFrequencies);
+        C_phi = diag(2*beam.zeta*modal.NaturalFrequencies);
     case {'proportional'}
-        C_phi = alphaC*eye(Nmodes)+betaC*omegaSq;
+        C_phi = beam.alphaC*eye(Nmodes)+beam.betaC*omegaSq;
     case {'none'}
         C_phi = zeros(Nmodes);
 end
@@ -157,10 +183,10 @@ end
 
 % Check first eigenfrequency!
 disp('Checking model...')
-I = (b*h^3)/12;
-A = b*h;
+I = (beam.h^3)/12;
+A = beam.h;
 lambda = 1.87510407;
-analyticalOmega1 = lambda^2/(2*pi*L^2)*sqrt(E*I/(rho*A));
+analyticalOmega1 = lambda^2/(2*pi*beam.L^2)*sqrt(beam.E*I/(beam.rho*A));
 switch simulationSettings.Input
     case {'force'}
         errPercentage = abs(analyticalOmega1 - modal.NaturalFrequencies(1)/(2*pi))/analyticalOmega1*100;
@@ -203,9 +229,9 @@ if simulationSettings.simulate ==  true
             xlabel 'm'
             ylabel 'm'
             axis equal
-            xlim([-L/6,L/6]);
-%             xlim([-h*4,h*4])
-            ylim([0,1.2*L])
+            xlim([-beam.L/6,beam.L/6]);
+%             xlim([-beam.h*4,beam.h*4])
+            ylim([0,1.2*beam.L])
             title 'Beam plot'
             beamAx = gca;
         subplot(4,3,[2,3,5,6])
@@ -252,7 +278,7 @@ if simulationSettings.simulate ==  true
             d = Phi*z(1:Nmodes,i);
 
             % Update Beam
-            updateBeam(links,nodes,faces,d);
+            beam.update(d);
             
             % Delete old plot
             if ~isempty(simPlots)
@@ -260,14 +286,14 @@ if simulationSettings.simulate ==  true
             end
 
             % Plot beam
-            simPlots = plotBeam(nodes,links,faces,plotSettings,simulationSettings,beamAx); 
-            timeText = text(beamAx, 0,L*1.1,['Time: ',num2str(round(t(i),1)),'/',num2str(t(end)),' s'],...
+            simPlots = plotModel(beam,plotSettings,simulationSettings,beamAx); 
+            timeText = text(beamAx, 0,beam.L*1.1,['Time: ',num2str(round(t(i),1)),'/',num2str(t(end)),' s'],...
                                                         'HorizontalAlignment','center');
             simPlots = [simPlots, timeText];
             
             % Plot laser
             if plotSettings.sensor == true
-                laser = plot(beamAx,[beamAx.XLim(1) output(i)-h/2],[1,1]*simulationSettings.measurementHeight*L,'r','lineWidth',2);
+                laser = plot(beamAx,[beamAx.XLim(1) output(i)-beam.h/2],[1,1]*simulationSettings.measurementHeight*beam.L,'r','lineWidth',2);
                 simPlots = [simPlots, laser];
             end
             
@@ -300,14 +326,14 @@ if simulationSettings.simulate ==  true
             inputNodes = find(Bd);
             inputNode = inputNodes(1);
             
-            inputN = plot(beamAx,nodes{inputNode}.pos(1),nodes{inputNode}.pos(2),'g.','MarkerSize',12);
+            inputN = plot(beamAx,beam.nodes{inputNode}.pos(1),beam.nodes{inputNode}.pos(2),'g.','MarkerSize',12);
             simPlots = [simPlots, inputN];
             
             alpha = simulationSettings.interpPoint(1,3);
             interpNodes = simulationSettings.interpPoint(:,2);
             
             outputNode = interpNodes(1)+alpha*(interpNodes(2)-interpNodes(1));
-            outputN = plot(beamAx,output(i)-h/2,outputNode,'r.','MarkerSize',12);
+            outputN = plot(beamAx,output(i)-beam.h/2,outputNode,'r.','MarkerSize',12);
             simPlots = [simPlots, outputN];
             drawnow;
             
