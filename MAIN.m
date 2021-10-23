@@ -35,7 +35,7 @@ sensor.zeta = 0.01;
 % actuator parameters
 actuator.L = 30e-3;                   % m
 actuator.h = 1e-3;                    % m
-actuator.N = 2;
+actuator.N = 4;
 actuator.E = 70e9;
 actuator.mu = 0.334;
 actuator.rho = 2710;
@@ -59,8 +59,10 @@ simulationSettings.measurementHeight = 0.95;    % []*L
 simulationSettings.dampingModel = 'modal';      % 'Modal','proportional' or 'none'
 simulationSettings.Input = 'force';             % 'force' for force input, or 'disp' for disp input   
     simulationSettings.Kbase = 1e10;            % only in 'disp' mode
-simulationSettings.Nsensors = 4;                % number of sensor patches
-simulationSettings.Nactuators = 4;              % number of actuators
+simulationSettings.Sensors = true;
+    simulationSettings.Nsensors = 9;                % number of sensor patches
+simulationSettings.Actuators = true;
+    simulationSettings.Nactuators = 4;              % number of actuators
         
 % Plot settings
 % Single mode plot settings
@@ -69,7 +71,7 @@ plotSettings.modalAnalysis = false;          % Single plot with a specific mode
     plotSettings.A = 0.5;
     
 % Beam, measurement and bode plot
-plotSettings.realMesh = false;                  % Make an extra plot with the original Mesh
+plotSettings.realMesh = true;                  % Make an extra plot with the original Mesh
 plotSettings.color = 'none';                    % 'disp' for displacement or 'deform' for deformation or 'none'
     plotSettings.fill = true;                   % Fill the beam with patch
 plotSettings.nodes = false;                     % Plot the nodes 

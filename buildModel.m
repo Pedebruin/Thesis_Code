@@ -19,11 +19,11 @@ function [FEM,beam,PDEbeam] = buildModel(beam,sensor,actuator,plotSettings,simul
                         (i-1)*beam.L/(beam.N-1),(i-1)*beam.L/(beam.N-1),... % y values (1,2)
                         i*beam.L/(beam.N-1),i*beam.L/(beam.N-1)]';          % y values(3,4)
         if length(num2str(i))==1
-            Bn = ['B','00',num2str(i)];
+            Bn = ['B1','00',num2str(i)];
         elseif length(num2str(i)) == 2
-            Bn = ['B','0',num2str(i)];
+            Bn = ['B1','0',num2str(i)];
         else 
-            Bn = ['B',num2str(i)];
+            Bn = ['B1',num2str(i)];
         end
         Bns = [Bns;Bn];
 
@@ -75,8 +75,6 @@ function [FEM,beam,PDEbeam] = buildModel(beam,sensor,actuator,plotSettings,simul
                     ssf = ['+',sn];
                 end
             end
-            
-
         end
         Sns = [Sns,sns];
         Ssf = [Ssf,ssf];  
@@ -94,7 +92,11 @@ function [FEM,beam,PDEbeam] = buildModel(beam,sensor,actuator,plotSettings,simul
     end
     
     Arects = [];
+    Ans = [];
+    Asf = [];
     for i = 1:Nactuators
+        ans = [];
+        asf = [];
         arects = zeros(10,actuator.N-1);
         dist = (beam.L-Nactuators*actuator.L)/Nactuators;
         bottom = (i-1)*(dist+actuator.L);
@@ -102,14 +104,54 @@ function [FEM,beam,PDEbeam] = buildModel(beam,sensor,actuator,plotSettings,simul
             arects(:,j) = [3,4,-actuator.h/2,actuator.h/2,actuator.h/2,-actuator.h/2,... % x values
                             (j-1)*actuator.L/(actuator.N-1),(j-1)*actuator.L/(actuator.N-1),... % y values (1,2)
                             j*actuator.L/(actuator.N-1),j*actuator.L/(actuator.N-1)]';          % y values(3,4)      
+            if length(num2str(j))==1
+                an = ['A',num2str(i),'00',num2str(j)];
+            elseif length(num2str(j)) == 2
+                an = ['A',num2str(i),'0',num2str(j)];
+            else 
+                an = ['A',num2str(i),num2str(j)];
+            end
+            Ans = [Ans;an];
+            
+            if i == 1
+                if ~isempty(asf)
+                    asf = [asf,'+',an];
+                else
+                    asf = an;
+                end
+            else
+                if ~isempty(asf)
+                    asf = [asf,'+',an];
+                else
+                    asf = ['+',an];
+                end
+            end
         end
+        Ans = [Ans,ans];
+        Asf = [Asf,asf]; 
         
-        arects(3:6,:) = arects(3:6,:) + (actuator.h/2+beam.h/2);  % Translate x positions
-        arects(7:10,:) = arects(7:10,:) + bottom;               % Translate y positions
-        Arects = [Arects,arects];                               % Add to rest of sensors
+        arects(3:6,:) = arects(3:6,:) + (actuator.h/2+beam.h/2);    % Translate x positions
+        arects(7:10,:) = arects(7:10,:) + bottom;                   % Translate y positions
+        Arects = [Arects,arects];                                   % Add to rest of sensors
     end
+    
 %% Create geometry
-    g = decsg([Brects,Srects],Bsf,Bns');
+if simulationSettings.Actuators == true && simulationSettings.Sensors ==  true
+    rects = [Brects,Srects,Arects];
+    sf = [Bsf,'+',Ssf,'+',Asf];
+    ns = [Bns',Sns',Ans'];
+elseif siulationSettings.Actuators == true && simulationSettings.Sensors == false
+    rects = [Brects,Arects];
+    sf = [Bsf,'+',Asf];
+    ns = [Bns',Ans'];
+elseif simulationSettings.Actuators == false && simulationSettings.Sensors == true
+    rects = [Brects,Srects];
+    sf = [Bsf,'+',Ssf];
+    ns = [Bns',Sns'];
+end
+
+g = decsg(rects,sf,ns);
+    
     geometryFromEdges(PDEbeam,g);
 
 %% Apply structural properties
@@ -135,7 +177,7 @@ function [FEM,beam,PDEbeam] = buildModel(beam,sensor,actuator,plotSettings,simul
     FEM = assembleFEMatrices(PDEbeam,'KM');
     
     if plotSettings.realMesh == true
-         pdeplot(PDEbeam,'NodeLabels','on'); % You can  plot the mesh if you want to         
+         pdeplot(PDEbeam,'NodeLabels','off'); % You can  plot the mesh if you want to         
     end
     
 %% Extract mesh and put it in the objects!
