@@ -1,65 +1,26 @@
-function P = plotModel(beam,plotSettings,simulationSettings,ax)
+function P = plotModel(bodies,plotSettings,simulationSettings,ax)
     if isempty(ax)
         figure()
         hold on
         axis equal
         ax = gca;
     end
-    numNodes = length(beam.nodes);
-    numLinks = length(beam.links);
-    numFaces = length(beam.faces);
+    
+    nodes = [bodies(1).nodeLocations];
+    
+    numNodes = length(nodes);
+    numLinks = length([bodies.links]);
     P = [];
     
     if plotSettings.fill == true
         colormap(turbo);
-        x = zeros(numNodes,1);
-        y = zeros(numNodes,1);
         
-        f = zeros(length(beam.faces{1}.neighbours),numFaces);
+        beam = [bodies(1).elements];
+        beamElements = [beam.neighbours]';
+        beamElements = beamElements(:,1:3);
+        beamElements = [beamElements(:,end),beamElements];
         
-        for i = 1:numNodes
-            x(i) = beam.nodes{i}.pos(1);
-            y(i) = beam.nodes{i}.pos(2);
-        end
-
-        for i = 1:numFaces
-            f(:,i) = beam.faces{i}.neighbours;
-        end
-        
-        switch plotSettings.color
-            case {'disp'}
-                caxis([0,7.5])
-                colorbar(ax)
-                disp = zeros(numNodes,1);
-                for i = 1:numNodes
-                   disp(i) = sqrt(beam.nodes{i}.disp(1)^2+beam.nodes{i}.disp(2)^2);
-                end
-                NodeColor = abs(disp);
-                EdgeColor = 'interp';
-                FaceColor = 'interp';  
-                
-            case {'deform'}
-                caxis([0,5e-4])
-                deform = zeros(numLinks,1);
-                for i = 1:numLinks
-                    deform(i) = beam.links{i}.deform;
-                end
-                
-                d = zeros(numNodes,1);
-                for i = 1:numNodes
-                    d(i) = mean(deform(beam.nodes{i}.neighbours));
-                end
-                NodeColor = abs(d);
-                EdgeColor = 'interp';
-                FaceColor = 'interp';
-
-            case {'none'}
-                NodeColor = [0.3010 0.7450 0.9330];
-                EdgeColor = [0.3010 0.7450 0.9330];     % A nice blue
-                FaceColor = [0.3010 0.7450 0.9330];
-                
-            otherwise                    
-        end
+        beamColor = [0.3010 0.7450 0.9330];
         
         if plotSettings.links == true
             EdgeAlpha = 1;
@@ -68,36 +29,65 @@ function P = plotModel(beam,plotSettings,simulationSettings,ax)
             EdgeAlpha = 0;
             FaceAlpha = 1;
         end
-        coloring = patch(ax,'Faces',f','Vertices',[x,y],...
-                                                'FaceVertexCData',NodeColor,...
-                                                'EdgeColor',EdgeColor,...
-                                                'FaceColor',FaceColor,...
+        beamPatch = patch(ax,'Faces',beamElements,'Vertices',nodes',...
+                                                'FaceVertexCData',beamColor,...
+                                                'EdgeColor',beamColor,...
+                                                'FaceColor',beamColor,...
                                                 'EdgeAlpha',EdgeAlpha,...
-                                                'FaceAlpha',FaceAlpha);                                
-        P = [P,coloring];
+                                                'FaceAlpha',FaceAlpha); 
+        P = [P,beamPatch];
+        
+        sensors = [bodies(2:simulationSettings.Nsensors+1).elements];
+        sensorElements = [sensors.neighbours]';
+        sensorElements = sensorElements(:,1:3);
+        sensorElements = [sensorElements(:,end),sensorElements];
+        
+        sensorColor = [0.8500 0.3250 0.0980];
+        sensorPatch = patch(ax,'Faces',sensorElements,'Vertices',nodes',...
+                                                 'FaceVertexCData',sensorColor,...
+                                                'EdgeColor',sensorColor,...
+                                                'FaceColor',sensorColor,...
+                                                'EdgeAlpha',EdgeAlpha,...
+                                                'FaceAlpha',FaceAlpha);  
+        P = [P,sensorPatch];
+        
+        actuators = [bodies(simulationSettings.Nsensors+2:end).elements];
+        actuatorElements = [actuators.neighbours]';
+        actuatorElements = actuatorElements(:,1:3);
+        actuatorElements = [actuatorElements(:,end),actuatorElements];
+        
+        actuatorColor = [0.4660 0.6740 0.1880];
+        actuatorPatch = patch(ax,'Faces',actuatorElements,'Vertices',nodes',...
+                                                 'FaceVertexCData',actuatorColor,...
+                                                'EdgeColor',actuatorColor,...
+                                                'FaceColor',actuatorColor,...
+                                                'EdgeAlpha',EdgeAlpha,...
+                                                'FaceAlpha',FaceAlpha);
+       P = [P,actuatorPatch];
     end
 
     % Plot Link numbers
-    for i = 1:numLinks
-        % Link Numbers
-        if plotSettings.linkNumbers == true
+    if plotSettings.linkNumbers == true
+        for i = 1:numLinks
+            % Link Numbers
+
             linkNumberPlots = beam.links{i}.plotNumber(ax,'k');
             P = [P,linkNumberPlots];
         end
     end
 
     % Plot Nodes
-    for i = 1:numNodes
-        % Nodes
-        if plotSettings.nodes == true
+    if plotSettings.nodes == true
+        for i = 1:numNodes
             nodePlots = beam.nodes{i}.plotNode(ax,'k');
             P = [P,nodePlots];
-        end
+        
 
-        % Node Numbers
-        if plotSettings.nodeNumbers == true
-            nodeNumberPlots = beam.nodes{i}.plotNumber(ax,'k');
-            P = [P,nodeNumberPlots];
+            % Node Numbers
+            if plotSettings.nodeNumbers == true
+                nodeNumberPlots = beam.nodes{i}.plotNumber(ax,'k');
+                P = [P,nodeNumberPlots];
+            end
         end
     end
 end

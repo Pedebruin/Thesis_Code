@@ -12,8 +12,8 @@ actuator = body('Actuator');
 %% Parameters & Settings
 % beam parameters
 beam.L = 370e-3;                    % m
-beam.h = 30e-3; %2;                      % m
-beam.N = 2;%65; %L/h;                  % Number of Vertical Nodes (minimum 2) (Accurate from around 65)
+beam.h = 2e-3; %2;                      % m
+beam.N = 65; %L/h;                  % Number of Vertical Nodes (minimum 2) (Accurate from around 65)
 beam.E = 70E9;                      % E modulus
 beam.mu = 0.334;                    % Poisson
 beam.rho = 2710;                    % Mass density
@@ -22,9 +22,9 @@ beam.betaC = 0.001595;              % For proportional damping
 beam.zeta = 0.01;                   % For modal damping
 
 % sensor parameters
-simulationSettings.Nsensors = 5;                % number of sensor patches
+simulationSettings.Nsensors = 1;                % number of sensor patches
 sensor.L = 30e-3;                   % m
-sensor.h = 30e-3; %1;                    % m
+sensor.h = 1e-3; %1;                    % m
 sensor.N = 2;
 sensor.E = 70e9;
 sensor.mu = 0.334;
@@ -34,9 +34,9 @@ sensor.betaC = 0.001595;
 sensor.zeta = 0.01;
 
 % actuator parameters
-simulationSettings.Nactuators = 2;              % number of actuators
+simulationSettings.Nactuators = 1;              % number of actuators
 actuator.L = 30e-3;                   % m
-actuator.h = 30e-3; %1                    % m
+actuator.h = 1e-3; %1                    % m
 actuator.N = 2;
 actuator.E = 70e9;
 actuator.mu = 0.334;
@@ -60,7 +60,7 @@ simulationSettings.simulate = true;
 simulationSettings.measurementHeight = 0.85;    % []*L Height of laser measurement
 simulationSettings.forceHeight = 1;             % []*L Height of applied force
 simulationSettings.dampingModel = 'modal';      % 'Modal','proportional' or 'none'
-simulationSettings.Input = 'force';             % 'force' for force input, or 'disp' for disp input   
+simulationSettings.Input = 'disp';             % 'force' for force input, or 'disp' for disp input   
     simulationSettings.Kbase = 1e10;            % only in 'disp' mode
 simulationSettings.Sensors = true;
 simulationSettings.Actuators = true;
@@ -73,12 +73,12 @@ plotSettings.modalAnalysis = false;          % Single plot with a specific mode
     plotSettings.A = 0.5;
     
 % Beam, measurement and bode plot
-plotSettings.realMesh = true;                  % Make an extra plot with the original Mesh
+plotSettings.realMesh = false;                  % Make an extra plot with the original Mesh
 plotSettings.color = 'none';                    % 'disp' for displacement or 'deform' for deformation or 'none'
     plotSettings.fill = true;                   % Fill the beam with patch
 plotSettings.nodes = false;                     % Plot the nodes 
     plotSettings.nodeNumbers = false;           % Node numbers
-plotSettings.links = false;                     % Plot the links (edges)
+plotSettings.links = true;                     % Plot the links (edges)
     plotSettings.linkNumbers = false;           % link numbers
 plotSettings.sensor = true;                     % plot the sensor
 plotSettings.sensorPlot = true;                 % plot the sensor output
@@ -126,7 +126,6 @@ Cd = zeros(2,numNodes*2);                                       % Measurement ma
 measureAlpha = measureNodes(1,3);
 Cd(1,measureNodes(:,1)) = [1-measureAlpha;measureAlpha];                      % Measure at selected point
 Cd(2,baseNodes) = 1/length(baseNodes);                          % Measure base displacement
-
 
 % modal system modelling
 % Get modal results
@@ -286,7 +285,9 @@ if simulationSettings.simulate ==  true
             d = Phi*z(1:Nmodes,i);
 
             % update bodies
-            bodies.update(d);
+            for i = 1:length(bodies)
+                bodies(i).update(d);
+            end
             
             % Delete old plot
             if ~isempty(simPlots)
@@ -294,7 +295,7 @@ if simulationSettings.simulate ==  true
             end
 
             % Plot beam
-            simPlots = plotModel(beam,plotSettings,simulationSettings,beamAx); 
+            simPlots = plotModel(bodies,plotSettings,simulationSettings,beamAx); 
             timeText = text(beamAx, 0,beam.L*1.1,['Time: ',num2str(round(t(i),1)),'/',num2str(t(end)),' s'],...
                                                         'HorizontalAlignment','center');
             simPlots = [simPlots, timeText];
@@ -331,18 +332,20 @@ if simulationSettings.simulate ==  true
             end
             
             % Plot input and output as dots
-            inputNodes = find(Bd);
-            inputNode = inputNodes(1);
-            
-            inputN = plot(beamAx,beam.nodes{inputNode}.pos(1),beam.nodes{inputNode}.pos(2),'g.','MarkerSize',12);
+            forceAlpha = simulationSettings.forcePoint(1,3);
+            inputNode = beam.nodeLocations(:,simulationSettings.forcePoint(:,1));
+            inputNode = inputNode(:,1)+(inputNode(:,2)-inputNode(:,1))*forceAlpha;
+
+            inputN = plot(beamAx,inputNode(1),inputNode(2),'g.','MarkerSize',12);
             simPlots = [simPlots, inputN];
             
-            alpha = simulationSettings.interpPoint(1,3);
-            interpNodes = simulationSettings.interpPoint(:,2);
+            measureAlpha = simulationSettings.measurePoint(1,3);
+            measureNode = beam.nodeLocations(:,simulationSettings.measurePoint(:,1));
+            measureNode = measureNode(:,1)+(measureNode(:,2)-measureNode(:,1))*measureAlpha;
             
-            outputNode = interpNodes(1)+alpha*(interpNodes(2)-interpNodes(1));
-            outputN = plot(beamAx,output(i)-beam.h/2,outputNode,'r.','MarkerSize',12);
+            outputN = plot(beamAx,measureNode(1),measureNode(2),'r.','MarkerSize',12);
             simPlots = [simPlots, outputN];
+            
             drawnow;
             
             % Measure elapsed time and delay

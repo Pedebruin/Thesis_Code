@@ -240,7 +240,7 @@ function [beam,sensors,actuators,FEM,PDEbeam] = buildModel(beam,sensor,actuator,
                 to = nodes(j).pos;
                 initPos = [from,to];
                 
-                links(k) = link(k,[i j],initPos);
+                links(k) = link(k,[i j]',initPos);
                 k = k+1;
             end
         end
@@ -263,10 +263,12 @@ function [beam,sensors,actuators,FEM,PDEbeam] = buildModel(beam,sensor,actuator,
     % Beam
     beamNodes = findNodes(PDEbeam.Mesh,'region','Face',beamFaces);
     beam.nodes = nodes(beamNodes);
+   
+    beam.nodeLocations = [nodes.pos];
     
     beamElements = findElements(PDEbeam.Mesh,'region','Face',beamFaces);
     beam.elements = Elements(beamElements);
-
+    
     beamLinks = [];
     for j = 1:length(links)
         if ismember(links(j).neighbours,beamNodes)
@@ -304,7 +306,7 @@ function [beam,sensors,actuators,FEM,PDEbeam] = buildModel(beam,sensor,actuator,
     actuators = actuator.empty;
     for i = 1:simulationSettings.Nactuators
         actuators(i) = copy(actuator);
-        actuators(i).name = [sensors(i).name,num2str(i)];
+        actuators(i).name = [actuators(i).name,num2str(i)];
         actuators(i).number = i;
 
         % nodes

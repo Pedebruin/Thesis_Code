@@ -14,6 +14,9 @@ classdef body < handle & dynamicprops & matlab.mixin.Copyable
         alphaC;
         betaC;
         zeta;
+        
+        nodeLocations;
+        plotElements;
     end
    
     methods
@@ -27,7 +30,7 @@ classdef body < handle & dynamicprops & matlab.mixin.Copyable
             
             numNodes = length([obj.nodes]);
             % Nodes
-            for i = 1:length([obj.nodes.number])
+            for i = 1:length([obj.nodes])
                 obj.nodes(i).update(q);
             end
             % Links
