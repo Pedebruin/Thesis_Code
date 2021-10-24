@@ -25,8 +25,10 @@ classdef link < handle & dynamicprops & matlab.mixin.Copyable
             n1 = obj.neighbours(1);
             n2 = obj.neighbours(2);
             
-            from = nodes{n1}.pos;
-            to = nodes{n2}.pos;         
+            n1 = find([nodes.number] == n1);
+            n2 = find([nodes.number] == n2);
+            from = nodes(n1).pos;
+            to = nodes(n2).pos;         
             
             obj.pos = [from, to];
             obj.deform = (norm(obj.pos(:,1)-obj.pos(:,2))-obj.L0)/obj.L0;

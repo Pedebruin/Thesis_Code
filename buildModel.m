@@ -1,4 +1,4 @@
-function [FEM,beam,PDEbeam] = buildModel(beam,sensor,actuator,plotSettings,simulationSettings)
+function [beam,sensors,actuators,FEM,PDEbeam] = buildModel(beam,sensor,actuator,plotSettings,simulationSettings)
 %% Set up the model using PDE toolbox!
 % This approach uses the meshing tool form the pde toolbox to mesh a
 % geometry also defined in this file. 
@@ -136,34 +136,55 @@ function [FEM,beam,PDEbeam] = buildModel(beam,sensor,actuator,plotSettings,simul
     end
     
 %% Create geometry
-if simulationSettings.Actuators == true && simulationSettings.Sensors ==  true
-    rects = [Brects,Srects,Arects];
-    sf = [Bsf,'+',Ssf,'+',Asf];
-    ns = [Bns',Sns',Ans'];
-elseif siulationSettings.Actuators == true && simulationSettings.Sensors == false
-    rects = [Brects,Arects];
-    sf = [Bsf,'+',Asf];
-    ns = [Bns',Ans'];
-elseif simulationSettings.Actuators == false && simulationSettings.Sensors == true
-    rects = [Brects,Srects];
-    sf = [Bsf,'+',Ssf];
-    ns = [Bns',Sns'];
-end
+    if simulationSettings.Actuators == true && simulationSettings.Sensors ==  true
+        rects = [Brects,Srects,Arects];
+        sf = [Bsf,'+',Ssf,'+',Asf];
+        ns = [Bns',Sns',Ans'];
+    elseif siulationSettings.Actuators == true && simulationSettings.Sensors == false
+        rects = [Brects,Arects];
+        sf = [Bsf,'+',Asf];
+        ns = [Bns',Ans'];
+    elseif simulationSettings.Actuators == false && simulationSettings.Sensors == true
+        rects = [Brects,Srects];
+        sf = [Bsf,'+',Ssf];
+        ns = [Bns',Sns'];
+    end
 
-g = decsg(rects,sf,ns);
-    
+    g = decsg(rects,sf,ns);
+
     geometryFromEdges(PDEbeam,g);
 
 %% Apply structural properties
-    structuralProperties(PDEbeam,'YoungsModulus', beam.E, ...
+    %pdegplot(PDEbeam,'FaceLabels','on');
+    % Beam
+    NbeamFaces = (beam.N-1);
+    beamFaces = 1:NbeamFaces;
+    structuralProperties(PDEbeam,'Face',beamFaces,...
+                                'YoungsModulus', beam.E, ...
                                'PoissonsRatio', beam.mu,...
                                'massDensity', beam.rho);
+    % Sensors                       
+    NsensorFaces = (sensor.N-1)*simulationSettings.Nsensors;
+    sensorFaces = NbeamFaces+1:NbeamFaces+NsensorFaces;
+    structuralProperties(PDEbeam,'Face',sensorFaces,...
+                                'YoungsModulus', sensor.E,...
+                                'PoissonsRatio', sensor.mu,...
+                                'massDensity', sensor.rho);
+    % Actuators
+    NactuatorFaces = (actuator.N-1)*simulationSettings.Nactuators;  
+    actuatorFaces = NbeamFaces+NsensorFaces+1:NbeamFaces+NsensorFaces+NactuatorFaces;
+    structuralProperties(PDEbeam,'Face',actuatorFaces,...
+                                'YoungsModulus', actuator.E,...
+                                'PoissonsRatio', actuator.mu,...
+                                'massDensity', actuator.rho);
 
+    %pdegplot(PDEbeam,'EdgeLabels','on','FaceLabels','on');
+    bottomEdge = nearestEdge(PDEbeam.Geometry,[0,0]);
     switch simulationSettings.Input
         case 'force'
-            structuralBC(PDEbeam,'edge',1,'Constraint','fixed');
+            structuralBC(PDEbeam,'edge',bottomEdge,'Constraint','fixed');
         case 'disp'
-            structuralBC(PDEbeam,'edge',1,'Constraint','roller');
+            structuralBC(PDEbeam,'edge',bottomEdge,'Constraint','roller');
     end
     
 
@@ -175,11 +196,14 @@ g = decsg(rects,sf,ns);
 
     % Obtain the FEM matrices!
     FEM = assembleFEMatrices(PDEbeam,'KM');
-    
+
     if plotSettings.realMesh == true
-         pdeplot(PDEbeam,'NodeLabels','off'); % You can  plot the mesh if you want to         
+        figure();
+        pdeplot(PDEbeam,'NodeLabels','on'); % You can  plot the mesh if you want to 
+%         figure();
+%         pdeplot(PDEbeam,'ElementLabels','on');
     end
-    
+
 %% Extract mesh and put it in the objects!
 % But get connectivity graph first
     numNodes = size(PDEbeam.Mesh.Nodes,2);
@@ -187,7 +211,8 @@ g = decsg(rects,sf,ns);
     numEl = size(PDEbeam.Mesh.Elements,2);
     connections = zeros(numNodes);
     for i = 1:numEl
-        edges = nchoosek(PDEbeam.Mesh.Elements(:,i),2);
+        elNodes = PDEbeam.Mesh.Elements(:,i);
+        edges = nchoosek(elNodes(1:3),2);
         for j = 1:size(edges,1)
             from = edges(j,1);
             to = edges(j,2);
@@ -196,53 +221,107 @@ g = decsg(rects,sf,ns);
         end
     end
     
-% Get the nodes for plotting and stuff
-    nodes = {};
+% Get all the nodes for plotting and stuff
+    nodes = node.empty;
     for i = 1:numNodes
         neighbours = find(connections(i,:));  % Neighbouring nodes
-
         initPos = PDEbeam.Mesh.Nodes(:,i);       % Position of the node
-
-        nod = node(i,neighbours,initPos);   % Make a node object
-        nodes{i} = nod;                         % Place node with other nodes
+        nodes(i) = node(i,neighbours,initPos);   % Place node with other nodes
     end 
     
-% Do same for links 
+% Do same for all links 
     connections = tril(connections,-1);
     k = 1;
-    links = {};
+    links = link.empty;
     for i = 1:numNodes
         for j = 1:numNodes
             if connections(i,j) == 1
-                from = nodes{i}.pos;
-                to = nodes{j}.pos;
+                from = nodes(i).pos;
+                to = nodes(j).pos;
                 initPos = [from,to];
                 
-                links{k} = link(k,[i j],initPos);
+                links(k) = link(k,[i j],initPos);
                 k = k+1;
             end
         end
     end 
     
-% And the faces
-    faces = {};
+% And the all elements
+    Elements = element.empty;
     numEl = size(PDEbeam.Mesh.Elements,2);
     for i = 1:numEl
         neighbours = PDEbeam.Mesh.Elements(:,i);
         initPos = zeros(2,length(neighbours));
         for j = 1:length(neighbours)
             Bn = neighbours(j);
-            initPos(:,j) = nodes{Bn}.initPos;
+            initPos(:,j) = nodes(Bn).initPos;
         end
-        faces{i} = face(i,neighbours,initPos);
+        Elements(i) = element(i,neighbours,initPos);
     end
-beam.nodes = nodes;
-beam.links = links;
-beam.faces = faces;
 
-%% Piezo patches!
-% TODO
-
-
+% Find nodes, faces and links for all bodies
+    % Beam
+    beamNodes = findNodes(PDEbeam.Mesh,'region','Face',beamFaces);
+    beam.nodes = nodes(beamNodes);
     
+    beamElements = findElements(PDEbeam.Mesh,'region','Face',beamFaces);
+    beam.elements = Elements(beamElements);
+
+    beamLinks = [];
+    for j = 1:length(links)
+        if ismember(links(j).neighbours,beamNodes)
+            beamLinks = [beamLinks,links(j).number];
+        end
+    end
+    beam.links = links(beamLinks);
+    
+    % Sensors
+    sensors = sensor.empty;
+    for i = 1:simulationSettings.Nsensors
+        sensors(i) = copy(sensor);
+        sensors(i).name = [sensors(i).name,num2str(i)];
+        sensors(i).number = i;
+        
+        % nodes
+        sensorNodes = findNodes(PDEbeam.Mesh,'region','Face',sensorFaces(i:i+sensor.N-2));
+        sensors(i).nodes = nodes(sensorNodes);
+
+        % elements
+        sensorElements = findElements(PDEbeam.Mesh,'region','Face',sensorFaces(i:i+sensor.N-2));
+        sensors(i).elements = Elements(sensorElements);
+        
+        % links
+        sensorLinks = [];
+        for j = 1:length(links)
+            if ismember(links(j).neighbours,sensorNodes)
+                sensorLinks = [sensorLinks,links(j).number];
+            end
+        end
+        sensors(i).links = links(sensorLinks);
+    end
+
+    % Actuators
+    actuators = actuator.empty;
+    for i = 1:simulationSettings.Nactuators
+        actuators(i) = copy(actuator);
+        actuators(i).name = [sensors(i).name,num2str(i)];
+        actuators(i).number = i;
+
+        % nodes
+        actuatorNodes = findNodes(PDEbeam.Mesh,'region','Face',actuatorFaces(i:i+sensor.N-2));
+        actuators(i).nodes = nodes(actuatorNodes);
+
+        % elements
+        actuatorElements = findElements(PDEbeam.Mesh,'region','Face',actuatorFaces(i:i+sensor.N-2));
+        actuators(i).elements = Elements(actuatorElements);
+        
+        % links
+        actuatorLinks = [];
+        for j = 1:length(links)
+            if ismember(links(j).neighbours,actuatorNodes)
+                actuatorLinks = [actuatorLinks,links(j).number];
+            end
+        end
+        actuators(i).links = links(actuatorLinks);
+    end  
 end
