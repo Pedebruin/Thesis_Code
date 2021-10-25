@@ -1,15 +1,18 @@
-function [beam,sensors,actuators,FEM,PDEbeam] = buildModel(beam,sensor,actuator,plotSettings,simulationSettings)
+function [beam,sensors,actuators,FEM,PDEMbeam] = buildModel(beam,sensor,actuator,plotSettings,simulationSettings)
 %% Set up the model using PDE toolbox!
 % This approach uses the meshing tool form the pde toolbox to mesh a
 % geometry also defined in this file. 
 % Inputs: Parameters of the beam
 % Outputs: Mesh matrices, nodal vector and also the entire beam model
 
+% Piezoelectrics:
+% https://nl.mathworks.com/help/pde/ug/deflection-of-a-piezoelectric-actuator.html#responsive_offcanvas
+
 %% Build beam geometry
     disp('Building Beam...')  
     % Create container
-    PDEbeam = createpde('structural','modal-planestress');
-
+    PDEMbeam = createpde('structural','modal-planestress'); % Beam for Modal analysis
+    
     % Define beam Geometry
     Brects = zeros(10,beam.N-1);
     Bns = [];
@@ -138,7 +141,7 @@ function [beam,sensors,actuators,FEM,PDEbeam] = buildModel(beam,sensor,actuator,
 %% Create geometry
     if simulationSettings.Actuators == true && simulationSettings.Sensors ==  true
         rects = [Brects,Srects,Arects];
-        sf = [Bsf,'+',Ssf,'+',Asf];
+        sf = ['(',Bsf,')+(',Ssf,')+(',Asf,')'];
         ns = [Bns',Sns',Ans'];
     elseif siulationSettings.Actuators == true && simulationSettings.Sensors == false
         rects = [Brects,Arects];
@@ -151,67 +154,78 @@ function [beam,sensors,actuators,FEM,PDEbeam] = buildModel(beam,sensor,actuator,
     end
 
     g = decsg(rects,sf,ns);
+    gs = decsg(Srects,Ssf,Sns');
+    ga = decsg(Arects,Asf,Ans');
+    gb = decsg(Brects,Bsf,Bns');
 
-    geometryFromEdges(PDEbeam,g);
+    geometryFromEdges(PDEMbeam,g);
+    
 
 %% Apply structural properties
-    %pdegplot(PDEbeam,'FaceLabels','on');
     % Beam
-    NbeamFaces = (beam.N-1);
-    beamFaces = 1:NbeamFaces;
-    structuralProperties(PDEbeam,'Face',beamFaces,...
+    BfaceCentersx = (Brects(3,:)+Brects(4,:))/2;
+    BfaceCentersy = (Brects(7,:)+Brects(9,:))/2;
+    
+    beamFaces = unique(nearestFace(PDEMbeam.Geometry,[BfaceCentersx',BfaceCentersy']));
+    
+    structuralProperties(PDEMbeam,'Face',beamFaces,...
                                 'YoungsModulus', beam.E, ...
                                'PoissonsRatio', beam.mu,...
                                'massDensity', beam.rho);
-    % Sensors                       
-    NsensorFaces = (sensor.N-1)*simulationSettings.Nsensors;
-    sensorFaces = NbeamFaces+1:NbeamFaces+NsensorFaces;
-    structuralProperties(PDEbeam,'Face',sensorFaces,...
+
+    % Sensors 
+    SfaceCentersx = (Srects(3,:)+Srects(4,:))/2;
+    SfaceCentersy = (Srects(7,:)+Srects(9,:))/2;
+
+    sensorFaces = nearestFace(PDEMbeam.Geometry,[SfaceCentersx',SfaceCentersy']);
+    structuralProperties(PDEMbeam,'Face',sensorFaces,...
                                 'YoungsModulus', sensor.E,...
                                 'PoissonsRatio', sensor.mu,...
                                 'massDensity', sensor.rho);
+    
     % Actuators
-    NactuatorFaces = (actuator.N-1)*simulationSettings.Nactuators;  
-    actuatorFaces = NbeamFaces+NsensorFaces+1:NbeamFaces+NsensorFaces+NactuatorFaces;
-    structuralProperties(PDEbeam,'Face',actuatorFaces,...
+    AfaceCentersx = (Arects(3,:)+Arects(4,:))/2;
+    AfaceCentersy = (Arects(7,:)+Arects(9,:))/2;
+    actuatorFaces = nearestFace(PDEMbeam.Geometry,[AfaceCentersx',AfaceCentersy']); 
+    structuralProperties(PDEMbeam,'Face',actuatorFaces,...
                                 'YoungsModulus', actuator.E,...
                                 'PoissonsRatio', actuator.mu,...
-                                'massDensity', actuator.rho);
+                                'massDensity', actuator.rho);                           
 
     %pdegplot(PDEbeam,'EdgeLabels','on','FaceLabels','on');
-    bottomEdge = nearestEdge(PDEbeam.Geometry,[0,0]);
+    bottomEdge = nearestEdge(PDEMbeam.Geometry,[0,0]);
     switch simulationSettings.Input
         case 'force'
-            structuralBC(PDEbeam,'edge',bottomEdge,'Constraint','fixed');
+            structuralBC(PDEMbeam,'edge',bottomEdge,'Constraint','fixed');
         case 'disp'
-            structuralBC(PDEbeam,'edge',bottomEdge,'Constraint','roller');
+            structuralBC(PDEMbeam,'edge',bottomEdge,'Constraint','roller');
     end
     
 
 %% Mesh 
     % Generate Mesh
-    generateMesh(PDEbeam,'Hmax',beam.L/beam.N,...
+    generateMesh(PDEMbeam,'Hmax',beam.L/beam.N,...
                         'Hmin',beam.L/beam.N,...
                         'GeometricOrder','quadratic');
 
     % Obtain the FEM matrices!
-    FEM = assembleFEMatrices(PDEbeam,'KM');
+    FEM = assembleFEMatrices(PDEMbeam,'domain');
 
     if plotSettings.realMesh == true
         figure();
-        pdeplot(PDEbeam,'NodeLabels','on'); % You can  plot the mesh if you want to 
+        pdeplot(PDEMbeam,'NodeLabels','on'); % You can  plot the mesh if you want to 
 %         figure();
 %         pdeplot(PDEbeam,'ElementLabels','on');
     end
 
 %% Extract mesh and put it in the objects!
 % But get connectivity graph first
-    numNodes = size(PDEbeam.Mesh.Nodes,2);
+    numNodes = size(PDEMbeam.Mesh.Nodes,2);
 
-    numEl = size(PDEbeam.Mesh.Elements,2);
+    numEl = size(PDEMbeam.Mesh.Elements,2);
     connections = zeros(numNodes);
     for i = 1:numEl
-        elNodes = PDEbeam.Mesh.Elements(:,i);
+        elNodes = PDEMbeam.Mesh.Elements(:,i);
         edges = nchoosek(elNodes(1:3),2);
         for j = 1:size(edges,1)
             from = edges(j,1);
@@ -225,7 +239,7 @@ function [beam,sensors,actuators,FEM,PDEbeam] = buildModel(beam,sensor,actuator,
     nodes = node.empty;
     for i = 1:numNodes
         neighbours = find(connections(i,:));  % Neighbouring nodes
-        initPos = PDEbeam.Mesh.Nodes(:,i);       % Position of the node
+        initPos = PDEMbeam.Mesh.Nodes(:,i);       % Position of the node
         nodes(i) = node(i,neighbours,initPos);   % Place node with other nodes
     end 
     
@@ -248,9 +262,9 @@ function [beam,sensors,actuators,FEM,PDEbeam] = buildModel(beam,sensor,actuator,
     
 % And the all elements
     Elements = element.empty;
-    numEl = size(PDEbeam.Mesh.Elements,2);
+    numEl = size(PDEMbeam.Mesh.Elements,2);
     for i = 1:numEl
-        neighbours = PDEbeam.Mesh.Elements(:,i);
+        neighbours = PDEMbeam.Mesh.Elements(:,i);
         initPos = zeros(2,length(neighbours));
         for j = 1:length(neighbours)
             Bn = neighbours(j);
@@ -261,12 +275,12 @@ function [beam,sensors,actuators,FEM,PDEbeam] = buildModel(beam,sensor,actuator,
 
 % Find nodes, faces and links for all bodies
     % Beam
-    beamNodes = findNodes(PDEbeam.Mesh,'region','Face',beamFaces);
+    beamNodes = findNodes(PDEMbeam.Mesh,'region','Face',beamFaces);
     beam.nodes = nodes(beamNodes);
    
     beam.nodeLocations = [nodes.pos];
     
-    beamElements = findElements(PDEbeam.Mesh,'region','Face',beamFaces);
+    beamElements = findElements(PDEMbeam.Mesh,'region','Face',beamFaces);
     beam.elements = Elements(beamElements);
     
     beamLinks = [];
@@ -283,15 +297,17 @@ function [beam,sensors,actuators,FEM,PDEbeam] = buildModel(beam,sensor,actuator,
         sensors(i) = copy(sensor);
         sensors(i).name = [sensors(i).name,num2str(i)];
         sensors(i).number = i;
-        
+
         % nodes
-        sensorNodes = findNodes(PDEbeam.Mesh,'region','Face',sensorFaces(i:i+sensor.N-2));
+        beg = (i-1)*(sensor.N-1)+1;
+        en = i*(sensor.N-1);
+        sensorNodes = findNodes(PDEMbeam.Mesh,'region','Face',sensorFaces(beg:en));
         sensors(i).nodes = nodes(sensorNodes);
 
         % elements
-        sensorElements = findElements(PDEbeam.Mesh,'region','Face',sensorFaces(i:i+sensor.N-2));
+        sensorElements = findElements(PDEMbeam.Mesh,'region','Face',sensorFaces(beg:en));
         sensors(i).elements = Elements(sensorElements);
-        
+
         % links
         sensorLinks = [];
         for j = 1:length(links)
@@ -310,11 +326,13 @@ function [beam,sensors,actuators,FEM,PDEbeam] = buildModel(beam,sensor,actuator,
         actuators(i).number = i;
 
         % nodes
-        actuatorNodes = findNodes(PDEbeam.Mesh,'region','Face',actuatorFaces(i:i+sensor.N-2));
+        beg = (i-1)*(actuator.N-1)+1;
+        en = i*(actuator.N-1);
+        actuatorNodes = findNodes(PDEMbeam.Mesh,'region','Face',actuatorFaces(beg:en));
         actuators(i).nodes = nodes(actuatorNodes);
-
+        
         % elements
-        actuatorElements = findElements(PDEbeam.Mesh,'region','Face',actuatorFaces(i:i+sensor.N-2));
+        actuatorElements = findElements(PDEMbeam.Mesh,'region','Face',actuatorFaces(beg:en));
         actuators(i).elements = Elements(actuatorElements);
         
         % links
@@ -326,4 +344,13 @@ function [beam,sensors,actuators,FEM,PDEbeam] = buildModel(beam,sensor,actuator,
         end
         actuators(i).links = links(actuatorLinks);
     end  
+    
+    %% Check number of nodes and elements
+    checkNodes = length(unique([beam.nodes, sensors.nodes, actuators.nodes])) - numNodes;
+    checkElements = length(unique([beam.elements, sensors.elements, actuators.elements])) - numEl;
+    
+    if checkNodes > 0 || checkElements > 0 
+        error('Number of nodes or number of elements do not coincide!')
+    end
+        
 end

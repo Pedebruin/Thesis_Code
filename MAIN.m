@@ -12,9 +12,11 @@ actuator = body('Actuator');
 %% Parameters & Settings
 % beam parameters
 beam.L = 370e-3;                    % m
-beam.h = 2e-3; %2;                      % m
+beam.h = 2e-3;                      % m
+beam.b = 40e-3;                     % m
 beam.N = 65; %L/h;                  % Number of Vertical Nodes (minimum 2) (Accurate from around 65)
 beam.E = 70E9;                      % E modulus
+beam.G = 25.5E9;                    % Shear Modulus
 beam.mu = 0.334;                    % Poisson
 beam.rho = 2710;                    % Mass density
 beam.alphaC = 0.001599;             % For proportional damping
@@ -22,30 +24,42 @@ beam.betaC = 0.001595;              % For proportional damping
 beam.zeta = 0.01;                   % For modal damping
 
 % sensor parameters
-simulationSettings.Nsensors = 1;                % number of sensor patches
+simulationSettings.Nsensors = 1;    % number of sensor patches
 sensor.L = 30e-3;                   % m
-sensor.h = 1e-3; %1;                    % m
-sensor.N = 2;
-sensor.E = 70e9;
+sensor.h = 1e-3; %1;                % m
+sensor.b = 40e-3;                   % m
+sensor.N = 10;
+sensor.E = 5.2e10;
+sensor.G = 0.775e9;                 % Shear modulus
 sensor.mu = 0.334;
-sensor.rho = 2710;
+sensor.rho = 7800;
 sensor.alphaC = 0.001599;
 sensor.betaC = 0.001595;
 sensor.zeta = 0.01;
 
+sensor.d31 = 2.2e-11;
+sensor.s11 = -3.0e-11;
+sensor.eta33 = 2400*sensor.eta0;
+
 % actuator parameters
-simulationSettings.Nactuators = 1;              % number of actuators
-actuator.L = 30e-3;                   % m
-actuator.h = 1e-3; %1                    % m
-actuator.N = 2;
-actuator.E = 70e9;
+simulationSettings.Nactuators = 1;  % number of actuators
+actuator.L = 30e-3;                 % m
+actuator.h = 1e-3; %1               % m
+actuator.b = 40e-3;                 % m
+actuator.N = 4;
+actuator.E = 5.2e10;
+actuator.G = 0.775e9;               % Shear modulus
 actuator.mu = 0.334;
-actuator.rho = 2710;
+actuator.rho = 7800;
 actuator.alphaC = 0.001599;
 actuator.betaC = 0.001595;
 actuator.zeta = 0.01;
 
-wmax = 1e4*(2*pi);                    % Maximum frequency to include in modal decomposition
+actuator.d31 = 2.2e-11;
+actuator.s11 = -3.0e-11;
+actuator.eta33 = 2400*sensor.eta0;
+
+wmax = 1e4*(2*pi);                  % Maximum frequency to include in modal decomposition
 
 % Simulation settings
 simulationSettings.simulate = true;
@@ -55,17 +69,16 @@ simulationSettings.simulate = true;
     simulationSettings.stepTime = 0.5;              % s
     simulationSettings.T = 5;                       % s
     simulationSettings.dt = 0.01;                   % s 
-    
+
 % model settings
 simulationSettings.measurementHeight = 0.85;    % []*L Height of laser measurement
 simulationSettings.forceHeight = 1;             % []*L Height of applied force
 simulationSettings.dampingModel = 'modal';      % 'Modal','proportional' or 'none'
-simulationSettings.Input = 'disp';             % 'force' for force input, or 'disp' for disp input   
+simulationSettings.Input = 'force';             % 'force' for force input, or 'disp' for disp input   
     simulationSettings.Kbase = 1e10;            % only in 'disp' mode
 simulationSettings.Sensors = true;
 simulationSettings.Actuators = true;
 
-        
 % Plot settings
 % Single mode plot settings
 plotSettings.modalAnalysis = false;          % Single plot with a specific mode
@@ -100,11 +113,11 @@ M = FEM.M;
 
 %% Setup LTI model
 % Find node to sense!
-measureNodes = interpolate(beam,simulationSettings.measurementHeight*beam.L);
+measureNodes = interpolate(bodies,simulationSettings.measurementHeight*beam.L);
 simulationSettings.measurePoint = measureNodes;
                                     
 % Find nodes for force input
-forceNodes = interpolate(beam,simulationSettings.forceHeight*beam.L);
+forceNodes = interpolate(bodies,simulationSettings.forceHeight*beam.L);
 simulationSettings.forcePoint = forceNodes;
 
 % Find nodes for displacement input
@@ -116,14 +129,14 @@ baseNodes = [beam.nodes(baseNodes).number]';
 % Input
 Bd = zeros(numNodes*2,2);                                       % External Input matrix in d space
 
-forceAlpha = forceNodes(1,3);
+forceAlpha = forceNodes(1,4);
 Bd(forceNodes(:,1),1) = [1-forceAlpha;forceAlpha];              % Force input (in x)!
 Bd(baseNodes,2) = 1/length(baseNodes);                          % For displacement input later on (in x)
 
 % Output
 Cd = zeros(2,numNodes*2);                                       % Measurement matrix in d space
 
-measureAlpha = measureNodes(1,3);
+measureAlpha = measureNodes(1,4);
 Cd(1,measureNodes(:,1)) = [1-measureAlpha;measureAlpha];                      % Measure at selected point
 Cd(2,baseNodes) = 1/length(baseNodes);                          % Measure base displacement
 
@@ -207,6 +220,46 @@ if errPercentage > 0.1 % greater then [] procent error in first eigenfrequency!
             'err = ',num2str(round(errPercentage,3)),'%!']);
 end
 
+% Augment with Piezo electrics!
+% Mechanical system matrices q = [z;zd]; u = [F;r], y = [m]
+Amech = SS_modal.A;
+Bmech = SS_modal.B;
+Cmech = SS_modal.C;
+Dmech = SS_modal.D;
+
+% For piezo augmentation, the states need to be augmented-> q = [z;zd;q;qd]
+% Where q = [q1,q2...qn] is the charge vector for all piezo patches. 
+Nsensors = simulationSettings.Nsensors;
+Nactuators = simulationSettings.Nactuators;
+Np = Nsensors+Nactuators;
+
+% Piezo parameters
+[Cs,G0s,G1s] = sensor.setupPiezo(bodies);
+[Ca,G0a,G1a] = actuator.setupPiezo(bodies);
+Ke = diag([ones(1,Nsensors)*Cs,ones(1,Nactuators)*Ca]);
+
+Ksens = zeros(numNodes*2,Nsensors);
+Kact = zeros(numNodes*2,Nactuators);
+
+Kc = [Ksens,Kact];
+
+% actuator input and output vectors
+Bact = [eye(Nactuators);
+      zeros(Nactuators+Nsensors*2,Nactuators)];
+Csens = [eye(Nsensors),zeros(Nsensors,Nactuators),zeros(Nsensors,Np)];
+
+A = [Amech,                                 [zeros(Nmodes,Np),  zeros(Nmodes,Np);
+                                             -Phi'*Kc,          zeros(Nmodes,Np)];   
+    zeros(Np,Nmodes),   zeros(Np,Nmodes),   zeros(Np,Np),       eye(Np);
+    Kc'*Phi,            zeros(Np,Nmodes),   Ke,                 zeros(Np)];
+B = [Bmech,                     zeros(size(Bmech,1),Nactuators);
+    zeros(Np*2,size(Bmech,2)),  Bact]; 
+C = [Cmech,                     zeros(size(Cmech,1),Np*2);
+     zeros(Nsensors,Nmodes*2),  Csens];
+D = zeros(size(Cmech,1)+Nsensors,size(Bmech,2)+Nactuators);
+
+SS_tot = ss(A,B,C,D);
+
 %% Time simulation
 if simulationSettings.simulate ==  true
     disp('Simulating...')
@@ -219,7 +272,10 @@ if simulationSettings.simulate ==  true
     [t,y] = ode45(@(t,z) sysFun(t,z,Asim,Bsim,simulationSettings),tvec,q0);
     z = y';
     output = SS_modal.C*z;
-    baseLocation = [Cphi(2,:),zeros(1,Nmodes)]*z;
+    baseLocation = output(2,:);
+    output = output(1,:);
+
+
    switch simulationSettings.Input
         case {'force'}
             plotSettings.base = false;
@@ -285,8 +341,8 @@ if simulationSettings.simulate ==  true
             d = Phi*z(1:Nmodes,i);
 
             % update bodies
-            for i = 1:length(bodies)
-                bodies(i).update(d);
+            for j = 1:length(bodies)
+                bodies(j).update(d);
             end
             
             % Delete old plot
@@ -332,15 +388,15 @@ if simulationSettings.simulate ==  true
             end
             
             % Plot input and output as dots
-            forceAlpha = simulationSettings.forcePoint(1,3);
-            inputNode = beam.nodeLocations(:,simulationSettings.forcePoint(:,1));
+            forceAlpha = simulationSettings.forcePoint(1,4);
+            inputNode = simulationSettings.forcePoint(:,[2,3])';
             inputNode = inputNode(:,1)+(inputNode(:,2)-inputNode(:,1))*forceAlpha;
 
-            inputN = plot(beamAx,inputNode(1),inputNode(2),'g.','MarkerSize',12);
+            inputN = plot(beamAx,inputNode(1),inputNode(2),'g.','MarkerSize',12,'color',[0.4660 0.6740 0.1880]);
             simPlots = [simPlots, inputN];
             
-            measureAlpha = simulationSettings.measurePoint(1,3);
-            measureNode = beam.nodeLocations(:,simulationSettings.measurePoint(:,1));
+            measureAlpha = simulationSettings.measurePoint(1,4);
+            measureNode = simulationSettings.measurePoint(:,[2,3])';
             measureNode = measureNode(:,1)+(measureNode(:,2)-measureNode(:,1))*measureAlpha;
             
             outputN = plot(beamAx,measureNode(1),measureNode(2),'r.','MarkerSize',12);
@@ -352,7 +408,7 @@ if simulationSettings.simulate ==  true
             elapsed = toc(tstart);
             
             if simulationSettings.animate == true
-                pause(max(simulationSettings.dt-elapsed,0));
+                pause(max(0.01,0));
             end
             if simulationSettings.pauseStart == true && i == 1 && simulationSettings.animate == true
                 disp('PAUSED, Press any key to continue');
@@ -361,7 +417,6 @@ if simulationSettings.simulate ==  true
         end 
     end
 end
-
 
 %% Mode shape analysis
 if plotSettings.modalAnalysis == true
@@ -451,21 +506,36 @@ function [links,nodes] =  updateBeam(links,nodes,faces,q)
 end   
 
 % Function to find nearest nodes when height form the left is given. 
-function interpPoint = interpolate(beam,y)
-    nodesxy = [beam.nodes.pos];
-    temp = [nodesxy(1,:);
-        abs(nodesxy(2,:)-y);
-        1:length(nodesxy);];
-    temp = sortrows(temp',2);
-    temp = temp(temp(:,1)<0,:);
-    interpNodes = temp([1,2],3);
-    interpNodes = sortrows([interpNodes,nodesxy(2,interpNodes)'],2);
-    interpNodes(1) = beam.nodes(interpNodes(1,1)').number;
-    interpNodes(2) = beam.nodes(interpNodes(2,1)').number;
-    alpha = (y-interpNodes(1,2))/(interpNodes(2,2)-interpNodes(1,2));
+function interpNodes = interpolate(bodies,y)
+    nodesxy = [bodies(1).nodeLocations];
+    nodesxy = [1:length(nodesxy);
+                nodesxy];
     
-    interpPoint =  [interpNodes,[alpha;
-                                alpha]];
+    % Nodes bove and below measurement height
+    higher = nodesxy(:,nodesxy(3,:)>=y);
+    lower =  nodesxy(:,nodesxy(3,:)<y);
+        
+    % sort on distance from measurement height
+    higher = sortrows(higher',3,'ascend');
+    lower = sortrows(lower',3,'descend');
+    
+    % Force to look on left edge of beam
+    higher = higher(higher(:,2)==-bodies(1).h/2,:);
+    lower = lower(lower(:,2)==-bodies(1).h/2,:);
+    
+    interpNodes = zeros(2,4);
+    interpNodes(1,1:3) = lower(1,:);   % closest node below
+    interpNodes(2,1:3) = higher(1,:);    % closest node above
+    
+    if interpNodes(1,3) == interpNodes(2,3)
+        alpha = 0.5;
+        
+    else
+        alpha = (y-interpNodes(1,3))/(interpNodes(2,3)-interpNodes(1,3));
+    end
+    
+    interpNodes(:,4) =  [alpha;
+                         alpha];
 end
               
               
