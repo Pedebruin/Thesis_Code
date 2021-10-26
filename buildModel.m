@@ -139,24 +139,25 @@ function [beam,sensors,actuators,FEM,PDEMbeam] = buildModel(beam,sensor,actuator
     end
     
 %% Create geometry
-    if simulationSettings.Actuators == true && simulationSettings.Sensors ==  true
+    if simulationSettings.Nactuators > 0 && simulationSettings.Nsensors > 0
         rects = [Brects,Srects,Arects];
         sf = ['(',Bsf,')+(',Ssf,')+(',Asf,')'];
         ns = [Bns',Sns',Ans'];
-    elseif siulationSettings.Actuators == true && simulationSettings.Sensors == false
+    elseif simulationSettings.Nactuators > 0 && simulationSettings.Nsensors == 0
         rects = [Brects,Arects];
         sf = [Bsf,'+',Asf];
         ns = [Bns',Ans'];
-    elseif simulationSettings.Actuators == false && simulationSettings.Sensors == true
+    elseif simulationSettings.Nactuators == 0 && simulationSettings.Nsensors > 0
         rects = [Brects,Srects];
         sf = [Bsf,'+',Ssf];
         ns = [Bns',Sns'];
+    else
+        rects = Brects;
+        sf = Bsf;
+        ns = Bns';
     end
 
     g = decsg(rects,sf,ns);
-    gs = decsg(Srects,Ssf,Sns');
-    ga = decsg(Arects,Asf,Ans');
-    gb = decsg(Brects,Bsf,Bns');
 
     geometryFromEdges(PDEMbeam,g);
     
@@ -174,23 +175,26 @@ function [beam,sensors,actuators,FEM,PDEMbeam] = buildModel(beam,sensor,actuator
                                'massDensity', beam.rho);
 
     % Sensors 
-    SfaceCentersx = (Srects(3,:)+Srects(4,:))/2;
-    SfaceCentersy = (Srects(7,:)+Srects(9,:))/2;
+    if simulationSettings.Nsensors > 0
+        SfaceCentersx = (Srects(3,:)+Srects(4,:))/2;
+        SfaceCentersy = (Srects(7,:)+Srects(9,:))/2;
 
-    sensorFaces = nearestFace(PDEMbeam.Geometry,[SfaceCentersx',SfaceCentersy']);
-    structuralProperties(PDEMbeam,'Face',sensorFaces,...
-                                'YoungsModulus', sensor.E,...
-                                'PoissonsRatio', sensor.mu,...
-                                'massDensity', sensor.rho);
-    
+        sensorFaces = nearestFace(PDEMbeam.Geometry,[SfaceCentersx',SfaceCentersy']);
+        structuralProperties(PDEMbeam,'Face',sensorFaces,...
+                                    'YoungsModulus', sensor.E,...
+                                    'PoissonsRatio', sensor.mu,...
+                                    'massDensity', sensor.rho);
+    end
     % Actuators
-    AfaceCentersx = (Arects(3,:)+Arects(4,:))/2;
-    AfaceCentersy = (Arects(7,:)+Arects(9,:))/2;
-    actuatorFaces = nearestFace(PDEMbeam.Geometry,[AfaceCentersx',AfaceCentersy']); 
-    structuralProperties(PDEMbeam,'Face',actuatorFaces,...
-                                'YoungsModulus', actuator.E,...
-                                'PoissonsRatio', actuator.mu,...
-                                'massDensity', actuator.rho);                           
+    if simulationSettings.Nactuators > 0
+        AfaceCentersx = (Arects(3,:)+Arects(4,:))/2;
+        AfaceCentersy = (Arects(7,:)+Arects(9,:))/2;
+        actuatorFaces = nearestFace(PDEMbeam.Geometry,[AfaceCentersx',AfaceCentersy']); 
+        structuralProperties(PDEMbeam,'Face',actuatorFaces,...
+                                    'YoungsModulus', actuator.E,...
+                                    'PoissonsRatio', actuator.mu,...
+                                    'massDensity', actuator.rho);    
+    end
 
     %pdegplot(PDEbeam,'EdgeLabels','on','FaceLabels','on');
     bottomEdge = nearestEdge(PDEMbeam.Geometry,[0,0]);

@@ -14,7 +14,7 @@ actuator = body('Actuator');
 beam.L = 370e-3;                    % m
 beam.h = 2e-3;                      % m
 beam.b = 40e-3;                     % m
-beam.N = 65;%L/h;                  % Number of Vertical Nodes (minimum 2) (Accurate from around 65)
+beam.N = 65;%L/h;                   % Number of Vertical Nodes (minimum 2) (Accurate from around 65)
 beam.E = 70E9;                      % E modulus
 beam.G = 25.5E9;                    % Shear Modulus
 beam.mu = 0.334;                    % Poisson
@@ -24,9 +24,9 @@ beam.betaC = 0.001595;              % For proportional damping
 beam.zeta = 0.01;                   % For modal damping
 
 % sensor parameters
-simulationSettings.Nsensors = 1;    % number of sensor patches
+simulationSettings.Nsensors = 5;    % number of sensor patches
 sensor.L = 30e-3;                   % m
-sensor.h = 2e-3; %1;                % m
+sensor.h = 1e-3; %1;                % m
 sensor.b = 40e-3;                   % m
 sensor.N = 3;
 sensor.E = 5.2e10;
@@ -42,9 +42,9 @@ sensor.s11 = -3.0e-11;
 sensor.eta33 = 2400*sensor.eta0;
 
 % actuator parameters
-simulationSettings.Nactuators = 1;  % number of actuators
+simulationSettings.Nactuators = 3;  % number of actuators
 actuator.L = 30e-3;                 % m
-actuator.h = 2e-3; %1               % m
+actuator.h = 1e-3; %1               % m
 actuator.b = 40e-3;                 % m
 actuator.N = 3;
 actuator.E = 5.2e10;
@@ -74,10 +74,8 @@ simulationSettings.simulate = true;
 simulationSettings.measurementHeight = 0.85;    % []*L Height of laser measurement
 simulationSettings.forceHeight = 1;             % []*L Height of applied force
 simulationSettings.dampingModel = 'modal';      % 'Modal','proportional' or 'none'
-simulationSettings.Input = 'force';             % 'force' for force input, or 'disp' for disp input   
+simulationSettings.Input = 'disp';             % 'force' for force input, or 'disp' for disp input   
     simulationSettings.Kbase = 1e10;            % only in 'disp' mode
-simulationSettings.Sensors = true;
-simulationSettings.Actuators = true;
 
 % Plot settings
 % Single mode plot settings
@@ -168,6 +166,7 @@ Rphi = Phi'*Bd;                                                     % Modal inpu
 Cphi = Cd*Phi;                                                      % Modal measurement
 
 % Assemble new system for modal
+disp('Assembling LTI model...')
 A_modal = [zeros(Nmodes), eye(Nmodes);                              % Dynamics
      -omegaSq,-C_phi];
 B_modal = [zeros(Nmodes,2);Rphi];                                   % External input
@@ -183,9 +182,10 @@ switch simulationSettings.Input
     case {'force'}
         % The base is fixed, so no input can be given there. The input is
         % thus chosen as a force at the tip. in x direction.
-        SS_modal = SS_modal(1,[1,2]);
+        SS_modalr = SS_modal(1,[1,2]);
         
     case {'disp'}
+        disp('Adding spring to base')
         % To get the input of the system bo be the displacement of the base
         % of the beam, it needs to be fixed by a stiff spring. This is done
         % by applying state feedback with a gain representing a spring
@@ -197,8 +197,8 @@ switch simulationSettings.Input
         DCgain = dcgain(SS_modal(1,2));
         SS_modal.B = [B_modal(:,1),B_modal(:,2)/DCgain];
 
-        SS_modal = SS_modal(1,[1,2]);               % From [F,r] to sensor out. 
-        SS_modal.Inputname = {'Force in','base Ref'};
+        SS_modalr = SS_modal(1,[1,2]);               % From [F,r] to sensor out. 
+        SS_modalr.Inputname = {'Force in','base Ref'};
 end
 
 % Check first eigenfrequency!
@@ -222,134 +222,142 @@ end
 
 % Augment with Piezo electrics!
 disp('Augmenting with piezo states...');
-% Mechanical system matrices q = [z;zd]; u = [F;r], y = [m]
-Amech = SS_modal.A;
-Bmech = SS_modal.B;
-Cmech = SS_modal.C;
-Dmech = SS_modal.D;
-
-% For piezo augmentation, the states need to be augmented-> q = [z;zd;q;qd]
-% Where q = [q1,q2...qn] is the charge vector for all piezo patches. 
 Nsensors = simulationSettings.Nsensors;
 Nactuators = simulationSettings.Nactuators;
-patches = [sensors, actuators];
 Np = Nsensors+Nactuators;
 
-% Piezo parameters
-[e33s,eta33s] = sensor.setupPiezo(bodies);
-[e33a,eta33a] = actuator.setupPiezo(bodies);
-ds = [0, 0, 0;       % Piezo coupling matrix for PZT in 2D (NEED TO CHECK!)(Depends on direction of polarisation)
-    0, 0, 23.3]*10^5;
-etas = eye(2)*eta33s;
+if Np > 0
+    % Mechanical system matrices q = [z;zd]; u = [F;r], y = [m]
+    Amech = SS_modalr.A;
+    Bmech = SS_modalr.B;
+    Cmech = SS_modalr.C;
+    Dmech = SS_modalr.D;
 
-da = [0, 0, 0;       % Piezo coupling matrix for PZT in 2D (NEED TO CHECK!)(Depends on direction of polarisation)
-    0, 0, 23.3]*10^5;
-etaa = eye(2)*eta33a;
+    % For piezo augmentation, the states need to be augmented-> q = [z;zd;q;qd]
+    % Where q = [q1,q2...qn] is the charge vector for all piezo patches. 
+    patches = [sensors, actuators];
 
-T_s = sparse(zeros(Nsensors+Nactuators,numNodes));
 
-for i = 1:Np
-    elements = [patches(i).elements];
-    Kpu_s = sparse(zeros(numNodes,numNodes*2));
-    Kpp_s = sparse(zeros(numNodes,numNodes));
-    
-    switch patches(i).name([1:3])
-        case {'Sen'}
-            d = ds;
-            eta = etas;
-        case {'Act'}
-            d = da;
-            eta = etaa;
+    % Piezo parameters
+    [e33s,eta33s] = sensor.setupPiezo(bodies);
+    [e33a,eta33a] = actuator.setupPiezo(bodies);
+    ds = [0, 0, 0;       % Piezo coupling matrix for PZT in 2D (NEED TO CHECK!)(Depends on direction of polarisation)
+        0, 0, 23.3]*10^5;
+    etas = eye(2)*eta33s;
+
+    da = [0, 0, 0;       % Piezo coupling matrix for PZT in 2D (NEED TO CHECK!)(Depends on direction of polarisation)
+        0, 0, 23.3]*10^5;
+    etaa = eye(2)*eta33a;
+
+    T_s = sparse(zeros(Nsensors+Nactuators,numNodes));
+
+    for i = 1:Np
+        elements = [patches(i).elements];
+        Kpu_s = sparse(zeros(numNodes,numNodes*2));
+        Kpp_s = sparse(zeros(numNodes,numNodes));
+
+        switch patches(i).name([1:3])
+            case {'Sen'}
+                d = ds;
+                eta = etas;
+            case {'Act'}
+                d = da;
+                eta = etaa;
+        end
+
+        for j = 1:length(elements)
+                % Elemental Kpu and Kpp matrices (Nguyen, 2018)
+            Kpu_e = sparse(zeros(numNodes,numNodes*2));
+            Kpp_e = sparse(zeros(numNodes,numNodes));
+
+                % Vertices
+            n1 = elements(j).neighbours(1); % Assume linear elements (Quadratic is slightly more envolved)
+            n2 = elements(j).neighbours(2);
+            n3 = elements(j).neighbours(3);
+
+                % Positions of the vertices
+            x1 = elements(j).pos(1,1);
+            x2 = elements(j).pos(1,2);
+            x3 = elements(j).pos(1,3);
+            y1 = elements(j).pos(2,1);
+            y2 = elements(j).pos(2,2);
+            y3 = elements(j).pos(2,3);
+
+            A = 1/2*det([1, x1, y1;         % Area of the triangle
+                         1, x2, y2;
+                         1, x3, y3]);
+            Bu = 1/(2*A)*[  y2-y3,  0,      y3-y1,  0,      y1-y2,  0;
+                            0,      x3-x2,  0,      x1-x3,  0,      x2-x1;
+                            x3-x2,  y2-y3,  x1-x3,  y1-y3,  x2-x1,  y1-y2];
+            Bphi = -1/(2*A)*[  y2-y3,  y3-y1,  y1-y2;
+                               x3-x2,  x1-x3,  x2-x1];
+
+            Kpu = A*Bphi'*d*Bu;   % Need to look at this ds to derive for 2D!! ('omitted now)
+            Kpp = A*Bphi'*eta*Bphi;
+
+            %% Put thes matrices at the right location in the larger elemental
+            % matrix!
+            Kpux = Kpu(:,[1,3,5]);
+            Kpuy = Kpu(:,[2,4,6]);
+            Kpu = [Kpux, Kpuy];
+
+            % Kpu matrix
+            Kpu_e(n1,n1) = Kpux(1,1);   Kpu_e(n1,n1+numNodes) = Kpuy(1,1);
+            Kpu_e(n1,n2) = Kpux(1,2);   Kpu_e(n1,n2+numNodes) = Kpuy(1,2);
+            Kpu_e(n1,n3) = Kpux(1,3);   Kpu_e(n1,n3+numNodes) = Kpuy(1,3);
+            Kpu_e(n2,n1) = Kpux(2,1);   Kpu_e(n2,n1+numNodes) = Kpuy(2,1);
+            Kpu_e(n2,n2) = Kpux(2,2);   Kpu_e(n2,n2+numNodes) = Kpuy(2,2);
+            Kpu_e(n2,n3) = Kpux(2,3);   Kpu_e(n2,n3+numNodes) = Kpuy(2,3);
+            Kpu_e(n3,n1) = Kpux(3,1);   Kpu_e(n3,n1+numNodes) = Kpuy(3,1); 
+            Kpu_e(n3,n2) = Kpux(3,2);   Kpu_e(n3,n2+numNodes) = Kpuy(3,2);
+            Kpu_e(n3,n3) = Kpux(3,3);   Kpu_e(n3,n3+numNodes) = Kpuy(3,3); 
+
+            % Kpp matrix
+            Kpp_e(n1,n1) = Kpp(1,1);
+            Kpp_e(n1,n2) = Kpp(1,2);
+            Kpp_e(n1,n3) = Kpp(1,3);
+            Kpp_e(n2,n1) = Kpp(2,1);
+            Kpp_e(n2,n2) = Kpp(2,2);
+            Kpp_e(n2,n3) = Kpp(2,3);
+            Kpp_e(n3,n1) = Kpp(3,1);
+            Kpp_e(n3,n2) = Kpp(3,2);
+            Kpp_e(n3,n3) = Kpp(3,3);
+
+            % Put matrix in larger matrix!
+            Kpu_s = Kpu_s+Kpu_e;
+            Kpp_s = Kpp_s+Kpp_e;
+            T_s(i,[n1,n2,n3]) = [1,1,1];
+        end
     end
-    
-    for j = 1:length(elements)
-            % Elemental Kpu and Kpp matrices (Nguyen, 2018)
-        Kpu_e = sparse(zeros(numNodes,numNodes*2));
-        Kpp_e = sparse(zeros(numNodes,numNodes));
-            
-            % Vertices
-        n1 = elements(j).neighbours(1); % Assume linear elements (Quadratic is slightly more envolved)
-        n2 = elements(j).neighbours(2);
-        n3 = elements(j).neighbours(3);
-        
-            % Positions of the vertices
-        x1 = elements(j).pos(1,1);
-        x2 = elements(j).pos(1,2);
-        x3 = elements(j).pos(1,3);
-        y1 = elements(j).pos(2,1);
-        y2 = elements(j).pos(2,2);
-        y3 = elements(j).pos(2,3);
-        
-        A = 1/2*det([1, x1, y1;         % Area of the triangle
-                     1, x2, y2;
-                     1, x3, y3]);
-        Bu = 1/(2*A)*[  y2-y3,  0,      y3-y1,  0,      y1-y2,  0;
-                        0,      x3-x2,  0,      x1-x3,  0,      x2-x1;
-                        x3-x2,  y2-y3,  x1-x3,  y1-y3,  x2-x1,  y1-y2];
-        Bphi = -1/(2*A)*[  y2-y3,  y3-y1,  y1-y2;
-                           x3-x2,  x1-x3,  x2-x1];
-                    
-        Kpu = A*Bphi'*d*Bu;   % Need to look at this ds to derive for 2D!! ('omitted now)
-        Kpp = A*Bphi'*eta*Bphi;
-        
-        %% Put thes matrices at the right location in the larger elemental
-        % matrix!
-        Kpux = Kpu(:,[1,3,5]);
-        Kpuy = Kpu(:,[2,4,6]);
-        Kpu = [Kpux, Kpuy];
 
-        % Kpu matrix
-        Kpu_e(n1,n1) = Kpux(1,1);   Kpu_e(n1,n1+numNodes) = Kpuy(1,1);
-        Kpu_e(n1,n2) = Kpux(1,2);   Kpu_e(n1,n2+numNodes) = Kpuy(1,2);
-        Kpu_e(n1,n3) = Kpux(1,3);   Kpu_e(n1,n3+numNodes) = Kpuy(1,3);
-        Kpu_e(n2,n1) = Kpux(2,1);   Kpu_e(n2,n1+numNodes) = Kpuy(2,1);
-        Kpu_e(n2,n2) = Kpux(2,2);   Kpu_e(n2,n2+numNodes) = Kpuy(2,2);
-        Kpu_e(n2,n3) = Kpux(2,3);   Kpu_e(n2,n3+numNodes) = Kpuy(2,3);
-        Kpu_e(n3,n1) = Kpux(3,1);   Kpu_e(n3,n1+numNodes) = Kpuy(3,1); 
-        Kpu_e(n3,n2) = Kpux(3,2);   Kpu_e(n3,n2+numNodes) = Kpuy(3,2);
-        Kpu_e(n3,n3) = Kpux(3,3);   Kpu_e(n3,n3+numNodes) = Kpuy(3,3); 
-        
-        % Kpp matrix
-        Kpp_e(n1,n1) = Kpp(1,1);
-        Kpp_e(n1,n2) = Kpp(1,2);
-        Kpp_e(n1,n3) = Kpp(1,3);
-        Kpp_e(n2,n1) = Kpp(2,1);
-        Kpp_e(n2,n2) = Kpp(2,2);
-        Kpp_e(n2,n3) = Kpp(2,3);
-        Kpp_e(n3,n1) = Kpp(3,1);
-        Kpp_e(n3,n2) = Kpp(3,2);
-        Kpp_e(n3,n3) = Kpp(3,3);
-        
-        % Put matrix in larger matrix!
-        Kpu_s = Kpu_s+Kpu_e;
-        Kpp_s = Kpp_s+Kpp_e;
-        T_s(i,[n1,n2,n3]) = [1,1,1];
-    end
+    % Add all potentials on the nodes for the actuators and the sensors to
+    % obtain the potential state of each patch! (Thomas, 2012)
+    Kc = Kpu_s';
+    Ke = Kpp_s;
+    T_s = T_s';
+
+    % actuator input and output vectors
+    Bact = [zeros(Nsensors,Nactuators);
+            eye(Nactuators)];
+    Csens = [eye(Nsensors),zeros(Nsensors,Nactuators),zeros(Nsensors,Np)];
+
+    A = [Amech,                                 [zeros(Nmodes,Np),  zeros(Nmodes,Np);
+                                                 -Phi'*Kc*T_s,          zeros(Nmodes,Np)];   
+        zeros(Np,Nmodes),   zeros(Np,Nmodes),   zeros(Np,Np),       eye(Np);
+        -T_s'*Kc'*Phi,            zeros(Np,Nmodes),   -T_s'*Ke*T_s,                 zeros(Np)];
+    B = [Bmech,                     zeros(size(Bmech,1),Nactuators);
+        zeros(Np,size(Bmech,2)),    zeros(Np,Nactuators);
+        zeros(Np,size(Bmech,2)),    Bact]; 
+    C = [Cmech,                     zeros(size(Cmech,1),Np*2);
+         zeros(Nsensors,Nmodes*2),  Csens];
+    D = zeros(size(Cmech,1)+Nsensors,size(Bmech,2)+Nactuators);
+
+    SS_tot = ss(full(A),full(B),C,D);
+    
+else
+    SS_tot = SS_modalr;
+    
 end
-
-% Add all potentials on the nodes for the actuators and the sensors to
-% obtain the potential state of each patch! (Thomas, 2012)
-Kc = Kpu_s';
-Ke = Kpp_s;
-T_s = T_s';
-
-% actuator input and output vectors
-Bact = [zeros(Nsensors,Nactuators);
-        eye(Nactuators)];
-Csens = [eye(Nsensors),zeros(Nsensors,Nactuators),zeros(Nsensors,Np)];
-
-A = [Amech,                                 [zeros(Nmodes,Np),  zeros(Nmodes,Np);
-                                             -Phi'*Kc*T_s,          zeros(Nmodes,Np)];   
-    zeros(Np,Nmodes),   zeros(Np,Nmodes),   zeros(Np,Np),       eye(Np);
-    -T_s'*Kc'*Phi,            zeros(Np,Nmodes),   -T_s'*Ke*T_s,                 zeros(Np)];
-B = [Bmech,                     zeros(size(Bmech,1),Nactuators);
-    zeros(Np,size(Bmech,2)),    zeros(Np,Nactuators);
-    zeros(Np,size(Bmech,2)),    Bact]; 
-C = [Cmech,                     zeros(size(Cmech,1),Np*2);
-     zeros(Nsensors,Nmodes*2),  Csens];
-D = zeros(size(Cmech,1)+Nsensors,size(Bmech,2)+Nactuators);
-
-SS_tot = ss(full(A),full(B),C,D);
 
 %% Time simulation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if simulationSettings.simulate ==  true
@@ -363,7 +371,9 @@ if simulationSettings.simulate ==  true
     [t,y] = ode45(@(t,z) sysFun(t,z,Asim,Bsim,simulationSettings),tvec,q0);
     z = y';
     output = SS_tot.C*z;
-    baseLocation = output(2,:);
+    
+    Cbase = SS_modal.C*z(1:Nmodes*2,:);
+    baseLocation = Cbase(2,:);
     measurement = output(1,:);
 
 
@@ -563,8 +573,8 @@ function qd = sysFun(t,q,A,B,simulationSettings)
         case {'force'}
             r = 0;
             if t > simulationSettings.stepTime
-                F = 0;
-                Q = 1e10;
+                F = 1;
+                Q = 0;%1e10;
             else
                 F = 0;
                 Q = 0;
@@ -573,8 +583,10 @@ function qd = sysFun(t,q,A,B,simulationSettings)
             F = 0;
             if t > simulationSettings.stepTime
                 r = 1;
+                Q = 0;
             else
                 r = 0;
+                Q = 0;
             end
     end        
     % Evaluate system
