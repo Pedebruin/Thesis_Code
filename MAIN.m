@@ -14,7 +14,7 @@ actuator = body('Actuator');
 beam.L = 370e-3;                    % m
 beam.h = 2e-3;                      % m
 beam.b = 40e-3;                     % m
-beam.N = 65; %L/h;                  % Number of Vertical Nodes (minimum 2) (Accurate from around 65)
+beam.N = 65;%L/h;                  % Number of Vertical Nodes (minimum 2) (Accurate from around 65)
 beam.E = 70E9;                      % E modulus
 beam.G = 25.5E9;                    % Shear Modulus
 beam.mu = 0.334;                    % Poisson
@@ -26,9 +26,9 @@ beam.zeta = 0.01;                   % For modal damping
 % sensor parameters
 simulationSettings.Nsensors = 1;    % number of sensor patches
 sensor.L = 30e-3;                   % m
-sensor.h = 1e-3; %1;                % m
+sensor.h = 2e-3; %1;                % m
 sensor.b = 40e-3;                   % m
-sensor.N = 10;
+sensor.N = 3;
 sensor.E = 5.2e10;
 sensor.G = 0.775e9;                 % Shear modulus
 sensor.mu = 0.334;
@@ -44,9 +44,9 @@ sensor.eta33 = 2400*sensor.eta0;
 % actuator parameters
 simulationSettings.Nactuators = 1;  % number of actuators
 actuator.L = 30e-3;                 % m
-actuator.h = 1e-3; %1               % m
+actuator.h = 2e-3; %1               % m
 actuator.b = 40e-3;                 % m
-actuator.N = 4;
+actuator.N = 3;
 actuator.E = 5.2e10;
 actuator.G = 0.775e9;               % Shear modulus
 actuator.mu = 0.334;
@@ -55,9 +55,9 @@ actuator.alphaC = 0.001599;
 actuator.betaC = 0.001595;
 actuator.zeta = 0.01;
 
-actuator.d31 = 2.2e-11;
-actuator.s11 = -3.0e-11;
-actuator.eta33 = 2400*sensor.eta0;
+actuator.d31 = 2.2e-1;
+actuator.s11 = -3.0e-1;
+actuator.eta33 = 2400*actuator.eta0;
 
 wmax = 1e4*(2*pi);                  % Maximum frequency to include in modal decomposition
 
@@ -221,6 +221,7 @@ if errPercentage > 0.1 % greater then [] procent error in first eigenfrequency!
 end
 
 % Augment with Piezo electrics!
+disp('Augmenting with piezo states...');
 % Mechanical system matrices q = [z;zd]; u = [F;r], y = [m]
 Amech = SS_modal.A;
 Bmech = SS_modal.B;
@@ -231,49 +232,139 @@ Dmech = SS_modal.D;
 % Where q = [q1,q2...qn] is the charge vector for all piezo patches. 
 Nsensors = simulationSettings.Nsensors;
 Nactuators = simulationSettings.Nactuators;
+patches = [sensors, actuators];
 Np = Nsensors+Nactuators;
 
 % Piezo parameters
-[Cs,G0s,G1s] = sensor.setupPiezo(bodies);
-[Ca,G0a,G1a] = actuator.setupPiezo(bodies);
-Ke = diag([ones(1,Nsensors)*Cs,ones(1,Nactuators)*Ca]);
+[e33s,eta33s] = sensor.setupPiezo(bodies);
+[e33a,eta33a] = actuator.setupPiezo(bodies);
+ds = [0, 0, 0;       % Piezo coupling matrix for PZT in 2D (NEED TO CHECK!)(Depends on direction of polarisation)
+    0, 0, 23.3]*10^5;
+etas = eye(2)*eta33s;
 
-Ksens = zeros(numNodes*2,Nsensors);
-Kact = zeros(numNodes*2,Nactuators);
+da = [0, 0, 0;       % Piezo coupling matrix for PZT in 2D (NEED TO CHECK!)(Depends on direction of polarisation)
+    0, 0, 23.3]*10^5;
+etaa = eye(2)*eta33a;
 
-Kc = [Ksens,Kact];
+T_s = sparse(zeros(Nsensors+Nactuators,numNodes));
+
+for i = 1:Np
+    elements = [patches(i).elements];
+    Kpu_s = sparse(zeros(numNodes,numNodes*2));
+    Kpp_s = sparse(zeros(numNodes,numNodes));
+    
+    switch patches(i).name([1:3])
+        case {'Sen'}
+            d = ds;
+            eta = etas;
+        case {'Act'}
+            d = da;
+            eta = etaa;
+    end
+    
+    for j = 1:length(elements)
+            % Elemental Kpu and Kpp matrices (Nguyen, 2018)
+        Kpu_e = sparse(zeros(numNodes,numNodes*2));
+        Kpp_e = sparse(zeros(numNodes,numNodes));
+            
+            % Vertices
+        n1 = elements(j).neighbours(1); % Assume linear elements (Quadratic is slightly more envolved)
+        n2 = elements(j).neighbours(2);
+        n3 = elements(j).neighbours(3);
+        
+            % Positions of the vertices
+        x1 = elements(j).pos(1,1);
+        x2 = elements(j).pos(1,2);
+        x3 = elements(j).pos(1,3);
+        y1 = elements(j).pos(2,1);
+        y2 = elements(j).pos(2,2);
+        y3 = elements(j).pos(2,3);
+        
+        A = 1/2*det([1, x1, y1;         % Area of the triangle
+                     1, x2, y2;
+                     1, x3, y3]);
+        Bu = 1/(2*A)*[  y2-y3,  0,      y3-y1,  0,      y1-y2,  0;
+                        0,      x3-x2,  0,      x1-x3,  0,      x2-x1;
+                        x3-x2,  y2-y3,  x1-x3,  y1-y3,  x2-x1,  y1-y2];
+        Bphi = -1/(2*A)*[  y2-y3,  y3-y1,  y1-y2;
+                           x3-x2,  x1-x3,  x2-x1];
+                    
+        Kpu = A*Bphi'*d*Bu;   % Need to look at this ds to derive for 2D!! ('omitted now)
+        Kpp = A*Bphi'*eta*Bphi;
+        
+        %% Put thes matrices at the right location in the larger elemental
+        % matrix!
+        Kpux = Kpu(:,[1,3,5]);
+        Kpuy = Kpu(:,[2,4,6]);
+        Kpu = [Kpux, Kpuy];
+
+        % Kpu matrix
+        Kpu_e(n1,n1) = Kpux(1,1);   Kpu_e(n1,n1+numNodes) = Kpuy(1,1);
+        Kpu_e(n1,n2) = Kpux(1,2);   Kpu_e(n1,n2+numNodes) = Kpuy(1,2);
+        Kpu_e(n1,n3) = Kpux(1,3);   Kpu_e(n1,n3+numNodes) = Kpuy(1,3);
+        Kpu_e(n2,n1) = Kpux(2,1);   Kpu_e(n2,n1+numNodes) = Kpuy(2,1);
+        Kpu_e(n2,n2) = Kpux(2,2);   Kpu_e(n2,n2+numNodes) = Kpuy(2,2);
+        Kpu_e(n2,n3) = Kpux(2,3);   Kpu_e(n2,n3+numNodes) = Kpuy(2,3);
+        Kpu_e(n3,n1) = Kpux(3,1);   Kpu_e(n3,n1+numNodes) = Kpuy(3,1); 
+        Kpu_e(n3,n2) = Kpux(3,2);   Kpu_e(n3,n2+numNodes) = Kpuy(3,2);
+        Kpu_e(n3,n3) = Kpux(3,3);   Kpu_e(n3,n3+numNodes) = Kpuy(3,3); 
+        
+        % Kpp matrix
+        Kpp_e(n1,n1) = Kpp(1,1);
+        Kpp_e(n1,n2) = Kpp(1,2);
+        Kpp_e(n1,n3) = Kpp(1,3);
+        Kpp_e(n2,n1) = Kpp(2,1);
+        Kpp_e(n2,n2) = Kpp(2,2);
+        Kpp_e(n2,n3) = Kpp(2,3);
+        Kpp_e(n3,n1) = Kpp(3,1);
+        Kpp_e(n3,n2) = Kpp(3,2);
+        Kpp_e(n3,n3) = Kpp(3,3);
+        
+        % Put matrix in larger matrix!
+        Kpu_s = Kpu_s+Kpu_e;
+        Kpp_s = Kpp_s+Kpp_e;
+        T_s(i,[n1,n2,n3]) = [1,1,1];
+    end
+end
+
+% Add all potentials on the nodes for the actuators and the sensors to
+% obtain the potential state of each patch! (Thomas, 2012)
+Kc = Kpu_s';
+Ke = Kpp_s;
+T_s = T_s';
 
 % actuator input and output vectors
-Bact = [eye(Nactuators);
-      zeros(Nactuators+Nsensors*2,Nactuators)];
+Bact = [zeros(Nsensors,Nactuators);
+        eye(Nactuators)];
 Csens = [eye(Nsensors),zeros(Nsensors,Nactuators),zeros(Nsensors,Np)];
 
 A = [Amech,                                 [zeros(Nmodes,Np),  zeros(Nmodes,Np);
-                                             -Phi'*Kc,          zeros(Nmodes,Np)];   
+                                             -Phi'*Kc*T_s,          zeros(Nmodes,Np)];   
     zeros(Np,Nmodes),   zeros(Np,Nmodes),   zeros(Np,Np),       eye(Np);
-    Kc'*Phi,            zeros(Np,Nmodes),   Ke,                 zeros(Np)];
+    -T_s'*Kc'*Phi,            zeros(Np,Nmodes),   -T_s'*Ke*T_s,                 zeros(Np)];
 B = [Bmech,                     zeros(size(Bmech,1),Nactuators);
-    zeros(Np*2,size(Bmech,2)),  Bact]; 
+    zeros(Np,size(Bmech,2)),    zeros(Np,Nactuators);
+    zeros(Np,size(Bmech,2)),    Bact]; 
 C = [Cmech,                     zeros(size(Cmech,1),Np*2);
      zeros(Nsensors,Nmodes*2),  Csens];
 D = zeros(size(Cmech,1)+Nsensors,size(Bmech,2)+Nactuators);
 
-SS_tot = ss(A,B,C,D);
+SS_tot = ss(full(A),full(B),C,D);
 
-%% Time simulation
+%% Time simulation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if simulationSettings.simulate ==  true
     disp('Simulating...')
     tvec = 0:simulationSettings.dt:simulationSettings.T;
     
     % Time simulation!
-    q0 = zeros(Nmodes*2,1);
-    Asim = SS_modal.A;
-    Bsim = SS_modal.B;
+    q0 = zeros(Nmodes*2+Np*2,1);
+    Asim = SS_tot.A;
+    Bsim = SS_tot.B;
     [t,y] = ode45(@(t,z) sysFun(t,z,Asim,Bsim,simulationSettings),tvec,q0);
     z = y';
-    output = SS_modal.C*z;
+    output = SS_tot.C*z;
     baseLocation = output(2,:);
-    output = output(1,:);
+    measurement = output(1,:);
 
 
    switch simulationSettings.Input
@@ -327,7 +418,7 @@ if simulationSettings.simulate ==  true
         setoptions(bod,plotoptions);
             
         simPlots = [];
-        measurement = zeros(2,length(t));        
+%         measurement = zeros(2,length(t));        
         
         if simulationSettings.animate == true
             Nsteps = length(t);
@@ -358,7 +449,7 @@ if simulationSettings.simulate ==  true
             
             % Plot laser
             if plotSettings.sensor == true
-                laser = plot(beamAx,[beamAx.XLim(1) output(i)-beam.h/2],[1,1]*simulationSettings.measurementHeight*beam.L,'r','lineWidth',2);
+                laser = plot(beamAx,[beamAx.XLim(1) measurement(i)-beam.h/2],[1,1]*simulationSettings.measurementHeight*beam.L,'r','lineWidth',2);
                 simPlots = [simPlots, laser];
             end
             
@@ -367,18 +458,18 @@ if simulationSettings.simulate ==  true
                 if simulationSettings.animate == true
                     if i > 1
                         xs = [t(i-1),t(i)];
-                        ys = [output(i-1),output(i)];
+                        ys = [measurement(i-1),measurement(i)];
                         if plotSettings.base == true
                             yb = [baseLocation(i-1),baseLocation(i)];
                         end
                     else
                         xs = t(i);
-                        ys = output(i);
+                        ys = measurement(i);
                         yb = baseLocation(i);
                     end
                 else
                     xs = t;
-                    ys = output;
+                    ys = measurement;
                     yb = baseLocation;
                 end
                     if plotSettings.base == true
@@ -457,9 +548,9 @@ disp('Mode analysis plotting...')
             % Amplification factor
             A = plotSettings.A;
             % Update Beam
-            updateBeam(links,nodes,faces,A*(Phi(:,k)/norm(Phi(:,k))));
+            updateBeam(elements,nodes,faces,A*(Phi(:,k)/norm(Phi(:,k))));
             % Plot Beam
-            plotBeam(nodes,links,faces,plotSettings,simulationSettings,ax);
+            plotBeam(nodes,elements,faces,plotSettings,simulationSettings,ax);
     end
 end
 disp('Done!----------------------------------------------------------------')
@@ -472,9 +563,11 @@ function qd = sysFun(t,q,A,B,simulationSettings)
         case {'force'}
             r = 0;
             if t > simulationSettings.stepTime
-                F = 1;
+                F = 0;
+                Q = 1e10;
             else
                 F = 0;
+                Q = 0;
             end
         case {'disp'}
             F = 0;
@@ -485,7 +578,7 @@ function qd = sysFun(t,q,A,B,simulationSettings)
             end
     end        
     % Evaluate system
-    qd = A*q+B*[F,r]';
+    qd = A*q+B*[F,r,Q*eye(1,simulationSettings.Nactuators)]';
 end
 
 % Function to update all nodes, links and faces.

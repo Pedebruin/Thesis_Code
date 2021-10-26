@@ -54,18 +54,12 @@ classdef body < handle & dynamicprops & matlab.mixin.Copyable
             end
         end
         
-        function [C,G0,G1] = setupPiezo(obj,bodies)
+        function [e33,eta33] = setupPiezo(obj,bodies)
             beam = bodies(1);
             
             % From page 20 of paper!
-            e31_ = obj.d31/obj.s11;
-            eta33_ = obj.eta33-obj.d31^2/obj.s11;
-            c11_ = 1/obj.s11;
-            
-            
-            G0 = obj.b*e31_;
-            G1 = obj.b*e31_*(obj.h+beam.h)/2;
-            C = (eta33_*obj.b*obj.L)/obj.h; 
+            e33 = obj.d31/obj.s11;
+            eta33 = obj.eta33-obj.d31^2/obj.s11;
         end
    end
 end
