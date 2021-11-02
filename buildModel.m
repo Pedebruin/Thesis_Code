@@ -1,4 +1,4 @@
-function [beam,sensors,actuators,FEM,PDEMbeam] = buildModel(beam,sensor,actuator,plotSettings,simulationSettings)
+function [beam,sensors,actuators,FEM,PDEMbeam] = buildModel(beam,sensor,actuator,plotSettings,modelSettings)
 %% Set up the model using PDE toolbox!
 % This approach uses the meshing tool form the pde toolbox to mesh a
 % geometry also defined in this file. 
@@ -38,7 +38,7 @@ function [beam,sensors,actuators,FEM,PDEMbeam] = buildModel(beam,sensor,actuator
     end
     
 %% Add sensors
-    Nsensors = simulationSettings.Nsensors;
+    Nsensors = modelSettings.Nsensors;
     if Nsensors*sensor.L >= beam.L
         error('Too much sensors to fit on the beam')
     end
@@ -89,9 +89,9 @@ function [beam,sensors,actuators,FEM,PDEMbeam] = buildModel(beam,sensor,actuator
     
     
 %% Add actuators
-    Nactuators = simulationSettings.Nactuators;
+    Nactuators = modelSettings.Nactuators;
     if Nactuators*actuator.L >= beam.L
-        error('Too much actuators to fit on the beam')
+        error('Too many actuators to fit on the beam')
     end
     
     Arects = [];
@@ -139,15 +139,15 @@ function [beam,sensors,actuators,FEM,PDEMbeam] = buildModel(beam,sensor,actuator
     end
     
 %% Create geometry
-    if simulationSettings.Nactuators > 0 && simulationSettings.Nsensors > 0
+    if modelSettings.Nactuators > 0 && modelSettings.Nsensors > 0
         rects = [Brects,Srects,Arects];
         sf = ['(',Bsf,')+(',Ssf,')+(',Asf,')'];
         ns = [Bns',Sns',Ans'];
-    elseif simulationSettings.Nactuators > 0 && simulationSettings.Nsensors == 0
+    elseif modelSettings.Nactuators > 0 && modelSettings.Nsensors == 0
         rects = [Brects,Arects];
         sf = [Bsf,'+',Asf];
         ns = [Bns',Ans'];
-    elseif simulationSettings.Nactuators == 0 && simulationSettings.Nsensors > 0
+    elseif modelSettings.Nactuators == 0 && modelSettings.Nsensors > 0
         rects = [Brects,Srects];
         sf = [Bsf,'+',Ssf];
         ns = [Bns',Sns'];
@@ -175,7 +175,7 @@ function [beam,sensors,actuators,FEM,PDEMbeam] = buildModel(beam,sensor,actuator
                                'massDensity', beam.rho);
 
     % Sensors 
-    if simulationSettings.Nsensors > 0
+    if modelSettings.Nsensors > 0
         SfaceCentersx = (Srects(3,:)+Srects(4,:))/2;
         SfaceCentersy = (Srects(7,:)+Srects(9,:))/2;
 
@@ -186,7 +186,7 @@ function [beam,sensors,actuators,FEM,PDEMbeam] = buildModel(beam,sensor,actuator
                                     'massDensity', sensor.rho);
     end
     % Actuators
-    if simulationSettings.Nactuators > 0
+    if modelSettings.Nactuators > 0
         AfaceCentersx = (Arects(3,:)+Arects(4,:))/2;
         AfaceCentersy = (Arects(7,:)+Arects(9,:))/2;
         actuatorFaces = nearestFace(PDEMbeam.Geometry,[AfaceCentersx',AfaceCentersy']); 
@@ -196,9 +196,9 @@ function [beam,sensors,actuators,FEM,PDEMbeam] = buildModel(beam,sensor,actuator
                                     'massDensity', actuator.rho);    
     end
 
-    %pdegplot(PDEbeam,'EdgeLabels','on','FaceLabels','on');
+    % pdegplot(PDEbeam,'EdgeLabels','on','FaceLabels','on');
     bottomEdge = nearestEdge(PDEMbeam.Geometry,[0,0]);
-    switch simulationSettings.Input
+    switch modelSettings.Input
         case 'force'
             structuralBC(PDEMbeam,'edge',bottomEdge,'Constraint','fixed');
         case 'disp'
@@ -210,7 +210,7 @@ function [beam,sensors,actuators,FEM,PDEMbeam] = buildModel(beam,sensor,actuator
     % Generate Mesh
     generateMesh(PDEMbeam,'Hmax',beam.L/beam.N,...
                         'Hmin',beam.L/beam.N,...
-                        'GeometricOrder','quadratic');
+                        'GeometricOrder',modelSettings.elementOrder);                         %<---- Element order!
 
     % Obtain the FEM matrices!
     FEM = assembleFEMatrices(PDEMbeam,'domain');
@@ -218,8 +218,6 @@ function [beam,sensors,actuators,FEM,PDEMbeam] = buildModel(beam,sensor,actuator
     if plotSettings.realMesh == true
         figure();
         pdeplot(PDEMbeam,'NodeLabels','on'); % You can  plot the mesh if you want to 
-%         figure();
-%         pdeplot(PDEbeam,'ElementLabels','on');
     end
 
 %% Extract mesh and put it in the objects!
@@ -297,7 +295,7 @@ function [beam,sensors,actuators,FEM,PDEMbeam] = buildModel(beam,sensor,actuator
     
     % Sensors
     sensors = sensor.empty;
-    for i = 1:simulationSettings.Nsensors
+    for i = 1:modelSettings.Nsensors
         sensors(i) = copy(sensor);
         sensors(i).name = [sensors(i).name,num2str(i)];
         sensors(i).number = i;
@@ -324,7 +322,7 @@ function [beam,sensors,actuators,FEM,PDEMbeam] = buildModel(beam,sensor,actuator
 
     % Actuators
     actuators = actuator.empty;
-    for i = 1:simulationSettings.Nactuators
+    for i = 1:modelSettings.Nactuators
         actuators(i) = copy(actuator);
         actuators(i).name = [actuators(i).name,num2str(i)];
         actuators(i).number = i;

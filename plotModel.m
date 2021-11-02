@@ -1,4 +1,4 @@
-function P = plotModel(bodies,plotSettings,simulationSettings,ax)
+function P = plotModel(bodies,plotSettings,modelSettings,ax)
     if isempty(ax)
         figure()
         hold on
@@ -40,8 +40,8 @@ function P = plotModel(bodies,plotSettings,simulationSettings,ax)
                                                 'FaceAlpha',FaceAlpha); 
         P = [P,beamPatch];
         
-        if simulationSettings.Nsensors > 0
-            sensors = [bodies(2:simulationSettings.Nsensors+1).elements];
+        if modelSettings.Nsensors > 0
+            sensors = [bodies(2:modelSettings.Nsensors+1).elements];
             sensorElements = [sensors.neighbours]';
             sensorElements = sensorElements(:,1:3);
             sensorElements = [sensorElements(:,end),sensorElements];
@@ -55,8 +55,8 @@ function P = plotModel(bodies,plotSettings,simulationSettings,ax)
                                                     'FaceAlpha',FaceAlpha);  
             P = [P,sensorPatch];
         end
-        if simulationSettings.Nactuators > 0
-            actuators = [bodies(simulationSettings.Nsensors+2:end).elements];
+        if modelSettings.Nactuators > 0
+            actuators = [bodies(modelSettings.Nsensors+2:end).elements];
             actuatorElements = [actuators.neighbours]';
             actuatorElements = actuatorElements(:,1:3);
             actuatorElements = [actuatorElements(:,end),actuatorElements];

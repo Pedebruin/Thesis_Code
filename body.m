@@ -5,7 +5,7 @@ classdef body < handle & dynamicprops & matlab.mixin.Copyable
         nodes;                              % Neighbours
         links;                              % Initial position
         elements;                              % Current position
-        
+
         % Mechanical properties
         L;
         h;
@@ -25,6 +25,8 @@ classdef body < handle & dynamicprops & matlab.mixin.Copyable
         s11 = 0;
         eta33 = 0;
         eta0 = 8.854187817620e-12;
+        initA;
+        A;
         
         % Additional properties
         nodeLocations;
@@ -34,7 +36,7 @@ classdef body < handle & dynamicprops & matlab.mixin.Copyable
     methods
         % node(), Constructor (set parameters at initialisation)
         function obj = body(name)
-            obj.name = name;            
+            obj.name = name;   
         end   
         
         function update(obj,q)
@@ -49,18 +51,23 @@ classdef body < handle & dynamicprops & matlab.mixin.Copyable
             for i = 1:length([obj.links])
                 obj.links(i).update(obj.nodes);
             end
-            % Faces
+            % Elements
             for i = 1:length([obj.elements])
                 obj.elements(i).update(obj.nodes);
             end
+            
+            % Area
+            obj.initA = sum([obj.elements.initA]);
+            obj.A = sum([obj.elements.A]);   
         end
         
-        function [e33,eta33] = setupPiezo(obj,bodies)
-            beam = bodies(1);
+        function [eta,e] = setupPiezo(obj)
             
+            e = [obj.d33, obj.d31, 0;
+                0, 0, 0]'/obj.s11;
+
             % From page 20 of paper!
-            e33 = obj.d31/obj.s11;
-            eta33 = obj.eta33-obj.d31^2/obj.s11;
+            eta = eye(2)*(obj.eta33-obj.d31^2/obj.s11); % eye*eta33 
         end
    end
 end
