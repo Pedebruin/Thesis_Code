@@ -21,6 +21,7 @@ classdef body < handle & dynamicprops & matlab.mixin.Copyable
         
         % Piezo properties
         d31 = 0;
+        d33 = 0;
         s11 = 0;
         eta33 = 0;
         eta0 = 8.854187817620e-12;
@@ -38,7 +39,7 @@ classdef body < handle & dynamicprops & matlab.mixin.Copyable
         
         function update(obj,q)
             % d is a displacement vector the same size as obj.nodes
-            
+
             numNodes = length([obj.nodes]);
             % Nodes
             for i = 1:length([obj.nodes])

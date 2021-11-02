@@ -5,8 +5,11 @@ function P = plotModel(bodies,plotSettings,simulationSettings,ax)
         axis equal
         ax = gca;
     end
-    
-    nodes = [bodies(1).nodeLocations];
+    % Get node locations!
+    nodes = unique([bodies.nodes]);
+    nodes = [nodes.number;nodes.pos]';
+    nodes = sortrows(nodes,1);
+    nodes = nodes(:,[2,3])';
     
     numNodes = length(nodes);
     numLinks = length([bodies.links]);
@@ -85,7 +88,6 @@ function P = plotModel(bodies,plotSettings,simulationSettings,ax)
             nodePlots = beam.nodes{i}.plotNode(ax,'k');
             P = [P,nodePlots];
         
-
             % Node Numbers
             if plotSettings.nodeNumbers == true
                 nodeNumberPlots = beam.nodes{i}.plotNumber(ax,'k');
