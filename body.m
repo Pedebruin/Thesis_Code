@@ -63,7 +63,7 @@ classdef body < handle & dynamicprops & matlab.mixin.Copyable
         
         function [eta,e] = setupPiezo(obj)
             
-            e = [obj.d33, obj.d31, 0;
+            e = [obj.d31, obj.d33, 0;
                 0, 0, 0]'/obj.s11;
 
             % From page 20 of paper!

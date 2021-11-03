@@ -42,14 +42,14 @@ beam.mu = 0.334;                    % Poisson
 beam.rho = 2710;                    % Mass density
 beam.alphaC = 0.001599;             % For proportional damping
 beam.betaC = 0.001595;              % For proportional damping
-beam.zeta = 0.01;                    % For modal damping
+beam.zeta = 0.01;                   % For modal damping
 
 % Aensor parameters PI P-876 DuraAct
-modelSettings.Nsensors = 0;    % number of sensor patches
+modelSettings.Nsensors = 6;    % number of sensor patches
 sensor.L = 50e-3;                   % m
 sensor.h = 500e-6; %1;                % m
 sensor.b = 40e-3;                   % m
-sensor.N = 2;%sensor.L/beam.h;
+sensor.N = 8;%sensor.L/beam.h;
 sensor.E = 5.2e10;
 sensor.G = 0.775e9;                 % Shear modulus
 sensor.mu = 0.334;
@@ -64,11 +64,11 @@ sensor.s11 = 16.1e-12;
 sensor.eta33 = 1750*sensor.eta0;
 
 % Actuator parameters PI P-876 DuraAct
-modelSettings.Nactuators = 3;  % number of actuators
+modelSettings.Nactuators = 6;  % number of actuators
 actuator.L = 50e-3;                 % m
 actuator.h = 500e-6; %1               % m
 actuator.b = 40e-3;                 % m
-actuator.N = 25;%actuator.L/beam.h;
+actuator.N = 2;%actuator.L/beam.h;
 actuator.E = 5.2e10;
 actuator.G = 0.775e9;               % Shear modulus
 actuator.mu = 0.334;
@@ -91,7 +91,7 @@ modelSettings.dampingModel = 'modal';      % 'Modal','proportional' or 'none'
 modelSettings.Input = 'force';             % 'force' for force input, or 'disp' for disp input   
     modelSettings.Kbase = 1e10;            % only in 'disp' mode
 modelSettings.elementOrder = 'quadratic';  % Order of the elements 'quadratic' or 'linear'
-modelSettings.debug = true;                 % OVERULES OTHER SETTINGS, BE CAREFUL
+modelSettings.debug = false;                 % OVERULES OTHER SETTINGS, BE CAREFUL
      
 % Simulation settings
 simulationSettings.simulate = true;
@@ -101,12 +101,16 @@ simulationSettings.simulate = true;
     simulationSettings.stepTime = 0.5;              % s
     simulationSettings.T = 5;                       % s
     simulationSettings.dt = 0.01;                   % s 
+simulationSettings.fb = false;                      % Simulate feedback?
 
 % Plot settings
 % Single mode plot settings
 plotSettings.modalAnalysis = false;          % Single plot with a specific mode
     plotSettings.modes = 9;
     plotSettings.A = 0.1;
+
+% Bode comparison plot
+plotSettings.fbBode = true;
     
 % Beam, measurement and bode plot
 plotSettings.realMesh = false;                  % Make an extra plot with the original Mesh
@@ -133,7 +137,7 @@ if modelSettings.debug == true
     beam.N = 2;
     
     sensor.h = 25e-3;
-    sensor.N = 2;
+    sensor.N = 6;
     
     actuator.h = 25e-3;
     actuator.N = 2;    
@@ -258,7 +262,7 @@ switch modelSettings.Input
         errPercentage = abs(analyticalf1 - fpeak/(2*pi))/analyticalf1*100;
 end
 if errPercentage > 0.1 % greater then [] procent error in first eigenfrequency!
-    warning(['First eigenfrequency does not correspond, use more nodes!',newline...
+    warning(['First eigenfrequency does not correspond, use more nodes (Or turn off patches!',newline...
             'err = ',num2str(round(errPercentage,3)),'%!']);
 end
 
@@ -330,7 +334,7 @@ if Np > 0
             Bphi = -1/(2*A_e)*[  y2-y3,  y3-y1,  y1-y2;                       % Checked?
                                x3-x2,  x1-x3,  x2-x1];
 
-            Kpu = A_e*Bphi'*e'*Bu;   % 
+            Kpu = A_e*Bphi'*e'*Bu;   
             Kpp = -A_e*Bphi'*eta*Bphi;
 
             %% Put thes matrices at the right location in the larger elemental
@@ -375,21 +379,22 @@ if Np > 0
         end
     end
     
-    Kpu = Kpu_s+Kpu_a;
+    Kpu = Kpu_s+Kpu_a;    
     Kpp = Kpp_s+Kpp_a;
     
     % actuator input and output vectors --->>> q = [z;zd]
-    Bact = T_a';    
-    Csens = T_s;        
+    T_s = T_s./sum(T_s,2)*sensor.eta33/sensor.h;
+    T_a = T_a./sum(T_a,2)*actuator.eta33/actuator.h;
+    Bp = [T_s',T_a'];    % [Sensors, Actuators]
 
     A = Amech+[zeros(Nmodes),   zeros(Nmodes);
-               -Phi'*Kpu'*pinv(full(Kpp))*Kpu*Phi, zeros(Nmodes) ];     % Pinv instead of /! Might cause issues..
-    B = [Bmech,[zeros(Nmodes,Nactuators);
-                -Phi'*Kpu'*pinv(full(Kpp))*T_a']*eta(1)/actuator.h];    % Also convert from sigma to V
+               Phi'*Kpu'*pinv(full(Kpp))*Kpu*Phi, zeros(Nmodes) ];     % Pinv instead of /! Might cause issues..
+    B = [Bmech,[zeros(Nmodes,Np);
+                -Phi'*Kpu'*pinv(full(Kpp))*Bp]];
     C = [Cmech;
-        pinv(full(T_s'))*Kpu*Phi,zeros(Nsensors,Nmodes)];
-    D = [Dmech,zeros(1,Nactuators);
-        zeros(Nsensors,size(Dmech,2)+Nactuators)];
+        -Bp'*pinv(full(Kpp))*Kpu*Phi,zeros(Np,Nmodes)];
+    D = [Dmech,                 zeros(size(Dmech,1),Np);
+        zeros(Np,size(Dmech,2)), Bp'*pinv(full(Kpp))*Bp];
 
     SS_tot = ss(full(A),full(B),full(C),D);
     
@@ -398,24 +403,40 @@ if Np > 0
     
     State:      Size:       Quantity:
     q = |z |    Nmodes      Modal states
-        |zd|    Nmodes      Modal velocities
-        |Q |    numNodes    Charge states per node
-        |Qd|    numNodes    Charge derivative per node        
+        |zd|    Nmodes      Modal velocities     
     
     Inputs & Outputs:
     Inputs          Model           Outputs
     |F |Force        ___________    |L | Laser measurement     
     |r |base Ref    |           |   |s1| Sensor outputs
-    |a1|Act inputs  |           |   |s2|
-    |a2|          =>|   SS_tot  |=> |..|        
+    |s1|Sens inputs |           |   |s2|
+    |s2|          =>|   SS_tot  |=> |..|        
     |..|            |           |   |sn|   
-    |an|            |___________|   
+    |sn|            |___________|   |a1| Act outputs
+    |a1|Act inputs                  |a2|
+    |a2|                            |..|
+    |..|                            |an|
+    |an|
     %}
 
 else
     SS_tot = SS_modalr;
 end
 
+%% Designing PPF (Feed all sensors and actuators back)
+[~,fpeak] = hinfnorm(SS_tot(1,1));
+wc = fpeak;
+zetac = 6*beam.zeta;
+kc = 1e8;
+
+PPF = tf(kc*wc^2,[1 2*zetac*wc wc^2]);
+PPF = PPF*eye(Nactuators);
+
+SS_fb = feedback(SS_tot,PPF,[3+Nsensors:2+Np],[2:1+Nactuators],1);
+
+if plotSettings.fbBode == true
+    bode(SS_fb(1,1),'r',SS_tot(1,1),'b');
+end
 %% Time simulation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if simulationSettings.simulate ==  true
     disp('Simulating...')
@@ -424,10 +445,22 @@ if simulationSettings.simulate ==  true
     % Time simulation!
     Asim = SS_tot.A;
     Bsim = SS_tot.B;
-    q0 = zeros(size(Asim,1),1);
-    [t,y] = ode45(@(t,z) sysFun(t,z,Asim,Bsim,modelSettings,simulationSettings),tvec,q0);
-    z = y';
-    y = SS_tot.C*z;
+    q0sim = zeros(size(Asim,1),1);
+    
+    Afb = SS_fb.A;
+    Bfb = SS_fb.B;
+    q0fb = zeros(size(Afb,1),1);
+    
+    if simulationSettings.fb == true
+        [t,y] = ode45(@(t,z) sysFun(t,z,blkdiag(Asim,Afb),[Bsim;Bfb],modelSettings,simulationSettings),tvec,[q0sim;q0fb]);
+        z = y';
+        y = SS_tot.C*z(1:size(SS_tot,1),:); 
+        yfb = SS_fb.C*z(size(SS_tot,1)+1:end,:);
+    else
+        [t,y] = ode45(@(t,z) sysFun(t,z,Asim,Bsim,modelSettings,simulationSettings),tvec,q0sim);
+        z = y';
+        y = SS_tot.C*z;
+    end
     
     d = Phi*z(1:Nmodes,:);
     baseLocation = d(baseNodes(2),:);
@@ -487,9 +520,17 @@ if simulationSettings.simulate ==  true
         
         switch modelSettings.Input
             case {'force'}
-                bod = bodeplot(bodeAx,minreal(SS_modalr(1,1)),plotoptions);
+                if simulationSettings.fb == true
+                    bod = bodeplot(bodeAx,SS_tot(1,1),'b',SS_fb(1,1),'r',plotoptions);
+                else
+                    bod = bodeplot(bodeAx,SS_tot(1,1),plotoptions);
+                end
             case {'disp'}
-                bod = bodeplot(bodeAx,minreal(SS_modalr(1,2)),plotoptions);
+                if simulationSettings.fb == true
+                    bod = bodeplot(bodeAx,SS_tot(1,2),'b',SS_fb(1,2),'r',plotoptions);
+                else
+                    bod = bodeplot(bodeAx,SS_tot(1,2),plotoptions);
+                end
         end
         
         % Plot analytical omega1
@@ -656,12 +697,15 @@ disp('Done!----------------------------------------------------------------')
 % odefun for ode45 etc..
 function qd = sysFun(t,q,A,B,modelSettings,simulationSettings)
     % Generic input!
+    Nactuators = modelSettings.Nactuators;
+    Nsensors = modelSettings.Nsensors;
+    
     switch modelSettings.Input 
         case {'force'}
             r = 0;
             if t > simulationSettings.stepTime
-                F = 0;
-                V = 100;    % Input voltage on the patch (I think)
+                F = 1;
+                V = 0;    % Input voltage on the patch (I think)
             else
                 F = 0;
                 V = 0;
@@ -675,9 +719,15 @@ function qd = sysFun(t,q,A,B,modelSettings,simulationSettings)
                 r = 0;
                 V = 0;
             end
-    end        
+    end   
+
     % Evaluate system
-    qd = A*q+B*[F,r,V*eye(1,modelSettings.Nactuators)]';
+    U = [F,r,zeros(1,Nsensors),V*eye(1,Nactuators)]';
+    qd = A*q+B*U;
+
+    if sum(isnan(q))>0 || sum(isnan(qd)) > 0
+        error("NaN's found in state vector")
+    end        
 end  
 
 % Function to find nearest nodes when height form the left is given. 
