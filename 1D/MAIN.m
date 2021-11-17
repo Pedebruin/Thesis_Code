@@ -7,18 +7,16 @@ close all
 set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',12);  
 
 disp('Setting up...')
-
 %% Parameters & Settings
 L = 370e-3;     % Total length
-b = 5e-3;      % Total width
+b = 40e-3;      % Total width
 
 % Model settings
-modelSettings.numEl = 5;
-modelSettings.sElements = [];   % Write a smarter function for this later!
+modelSettings.numEl = 10;
+modelSettings.sElements = [2,3,4];   % Write a smarter function for this later!
 modelSettings.dispInput = false;
-modelSettings.Nmodes = 4;
-modelSettings.zeta = 0.01;
-modelSettings.measurementHeight = 0.5;        
+modelSettings.Nmodes = 10;
+modelSettings.measurementHeight = 0.95;        
 
 % plotSettings
 plotSettings.plotNodes = true;
@@ -31,12 +29,11 @@ plotSettings.sensorPlot = true;
 simulationSettings.simulate = true;
 simulationSettings.stepTime = 0.1;
 simulationSettings.dt = 0.001;
-simulationSettings.T = 1;
+simulationSettings.T = 2;
 
 simulationSettings.animate = false;
 simulationSettings.plot = true;
 simulationSettings.pauseStart = false;
-
 
 % beam element parameters
 Beam = element('Beam');
@@ -46,6 +43,7 @@ Beam.b = b;                         % m
 Beam.E = 70E9;                      % E modulus
 Beam.mu = 0.334;                    % Poisson
 Beam.rho = 2710;                    % Mass density
+Beam.zeta = 0.01;                   % Modal damping matrix
 
 Beam.N = 10;                        % Number of interpolation points for plotting
 
@@ -82,9 +80,9 @@ for i = 1:numEl
     end
     
         Ib = El.b*El.h^3/12;
-        I = El.b*El.ph^3/12 + El.b*El.ph*(El.ph+El.h)*2/4;
+        Ip = El.pb*El.ph^3/12 + El.pb*El.ph*(El.ph+El.h)^2/4;
         
-        EI = El.E*Ib+2*El.pE*I;                     % Equivalent EI and Rho*A (for normal element, extra term is 0)
+        EI = El.E*Ib+2*El.pE*Ip;                     % Equivalent EI and Rho*A (for normal element, extra term is 0)
         rhoA = El.b*(El.rho*El.h+2*El.prho*El.ph);
 
         Ke = EI/El.L^3*    [12, 6*El.L, -12, 6*El.L;
@@ -135,7 +133,6 @@ for i = 1:numEl
     elements(i) = El.assign(i,[n1,n2],initPos,Ke,Me);
 end
 
-%% 
 if modelSettings.Nmodes <= modelSettings.numEl
     [Phi,omega2] = eigs(K,M,modelSettings.Nmodes+2,'smallestabs');
 else
@@ -177,10 +174,10 @@ Ep = sBeam.pE;
 d31 =  -180e-12;
 w = sBeam.pb;
 zbar = (sBeam.ph+sBeam.h)/2;
-G = Ep*d31*w*zbar*[-1,0,1,0]';
+G = Ep*d31*w*zbar*[0,-1,0,1]';
 
 % Damping matrix
-Cmodal = 2*modelSettings.zeta*sqrt(omega2);
+Cmodal = 2*Beam.zeta*sqrt(omega2);
 
 % External input B matrix (in d coordinates)
 Bext = zeros(numNodes*2,1);
@@ -226,19 +223,38 @@ C = [Cmeasurement*Phi, zeros(1,Nmodes);
 
 sys = ss(A,B,C,[]);
 
+[~,wpeak] = hinfnorm(sys(1,1));
+wc = wpeak;
+zetac = 6*Beam.zeta;
+kc = 0.1;
 
+PPF = tf(kc*wc^2,[1 2*zetac*wc wc^2]);
+PPF = -PPF*eye(nsElements);
+
+sys_fb = feedback(sys,PPF,[2:1+nsElements],[2:1+nsElements],1);
+sys = sys(1,1);
+sys_fb = sys_fb(1,1);
 %% Time simulation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if simulationSettings.simulate ==  true
     disp('Simulating...')
     tvec = 0:simulationSettings.dt:simulationSettings.T;
-    q0sim = zeros(size(A,1),1);
     
-        [t,y] = ode45(@(t,z) sysFun(t,z,A,B,modelSettings,simulationSettings),tvec,q0sim);
-        z = y';
-        y = C*z;
-    
+    q0sim = zeros(size(sys.A,1),1);     % Normal time simulation
+    Asim = sys.A;
+    Bsim = sys.B;
+    [t,y] = ode45(@(t,z) sysFun(t,z,Asim,Bsim,modelSettings,simulationSettings),tvec,q0sim);
+    z = y';
+    y = sys.C*z;
     dmat = Phi*z(1:Nmodes,:);
     measurement = y(1,:);
+    
+    q0sim = zeros(size(sys_fb.A,1),1);  % Feedback time simulation
+    Afb = sys_fb.A;
+    Bfb = sys_fb.B;
+    [t_fb,y_fb] = ode45(@(t,z) sysFun(t,z,Afb,Bfb,modelSettings,simulationSettings),tvec,q0sim);
+    z_fb = y_fb';
+    y_fb = sys_fb.C*z_fb;
+    measurement_fb = y_fb(1,:);
     
     if simulationSettings.plot == true
         disp('Plotting simulation...')
@@ -265,8 +281,8 @@ if simulationSettings.simulate ==  true
             hold on
             grid on
             xlabel 'time [s]'
-            ylabel 'Modal contribution'
-            title 'Modal state evolution'   
+            ylabel 'V'
+            title 'Output voltages'   
             stateAx = gca;
         subplot(7,3,[13:21])
             bodeAx = gca;
@@ -284,8 +300,8 @@ if simulationSettings.simulate ==  true
         plotOptions.PhaseWrapping = 'off';
         plotOptions.XLimMode = {'manual','manual'};
   
-        bod = bodeplot(bodeAx,sys(1,1),plotoptions);
-
+        bod = bodeplot(bodeAx,sys(1,1),sys_fb(1,1),plotoptions);
+        
         % Plot analytical omega1
         xline(bodeAx,analyticalf1)
       
@@ -343,19 +359,23 @@ if simulationSettings.simulate ==  true
                     if i > 1
                         xs = [t(i-1),t(i)];
                         ys = [measurement(i-1),measurement(i)];
-                        yst = [z(1:Nmodes,i-1),z(1:Nmodes,i)];
+                        y_fb = [measurement_fb(i-1),measurement_fb(i)];
+                        ysbeam = [y(1,i-1),y(1,i)];
                     else
                         xs = t(i);
                         ys = measurement(i);
-                        yst = z(1:Nmodes,i);
+                        ys_fb = measurement_fb(i);
+                        ysbeam = y(1,i);
                     end
                 else
                     xs = t;
                     ys = measurement;
-                    yst = z(1:Nmodes:end,:);
+                    ys_fb = measurement_fb;
+                    ysbeam = y;
                 end
                     sensorPlot = plot(measurementAx,xs,ys,'color',[0.3010 0.7450 0.9330]);
-                    statePlot = plot(stateAx,xs,yst);
+                    sensorfbPlot = plot(measurementAx,xs,ys_fb,'color',[0.8500 0.3250 0.0980]);
+                    statePlot = plot(stateAx,xs,ysbeam);
             end
             
             drawnow;
@@ -374,16 +394,16 @@ if simulationSettings.simulate ==  true
     end
 end
 
-d = Phi(:,1);
-d = d/max(abs(d));
-
-figure()
-hold on
-axis equal
-for i = 1:numEl
-    elements(i).update(d);
-    elements(i).show([],plotSettings);
-end
+% d = Phi(:,1);
+% d = d/max(abs(d));
+% 
+% figure()
+% hold on
+% axis equal
+% for i = 1:numEl
+%     elements(i).update(d);
+%     elements(i).show([],plotSettings);
+% end
 
 disp('Done!')
 
@@ -392,15 +412,21 @@ function qd = sysFun(t,q,A,B,modelSettings,simulationSettings)
     % Generic input!
     nsElements = length(modelSettings.sElements);
     if t > simulationSettings.stepTime
+
         F = 0.1;
-        V = 0;%100;    % Input voltage on the patch (I think)
+        V = 0;    % Input voltage on the patch (I think)
+    elseif t > simulationSettings.stepTime + simulationSettings.dt
+        F = 0;
+        V = 0;
     else
         F = 0;
         V = 0;
     end
-
+    N = zeros(1,nsElements);
+    N(5) = 1;
+    N(4) = -1;
     % Evaluate system
-    U = [F,V*eye(1,nsElements)]';
+    U = F;
     qd = A*q+B*U;
 
     if sum(isnan(q))>0 || sum(isnan(qd)) > 0

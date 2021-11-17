@@ -17,6 +17,7 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
         E;                                  % Its E modulus
         mu;                                 % Its poission's ratio
         rho;                                % Its density
+        zeta;                               % Its modal damping ratio
         
         % Mechanical piëzo properties
         ph = 0;
