@@ -44,7 +44,7 @@ beam.alphaC = 0.001599;             % For proportional damping
 beam.betaC = 0.001595;              % For proportional damping
 beam.zeta = 0.01;                   % For modal damping
 
-% Aensor parameters PI P-876 DuraAct
+% Sensor parameters PI P-876 DuraAct
 modelSettings.Nsensors = 6;    % number of sensor patches
 sensor.L = 50e-3;                   % m
 sensor.h = 500e-6; %1;                % m
@@ -91,7 +91,7 @@ modelSettings.dampingModel = 'modal';      % 'Modal','proportional' or 'none'
 modelSettings.Input = 'force';             % 'force' for force input, or 'disp' for disp input   
     modelSettings.Kbase = 1e10;            % only in 'disp' mode
 modelSettings.elementOrder = 'quadratic';  % Order of the elements 'quadratic' or 'linear'
-modelSettings.debug = false;                 % OVERULES OTHER SETTINGS, BE CAREFUL
+modelSettings.debug = true;                % OVERULES OTHER SETTINGS, BE CAREFUL
      
 % Simulation settings
 simulationSettings.simulate = true;
@@ -127,7 +127,7 @@ plotSettings.base = true;                       % Plot the location of the base 
 % Easy debugging -> Makes simplified model
 if modelSettings.debug == true
     modelSettings.Nsensors = 1;
-    modelSettings.Nactuators = 1;
+    modelSettings.Nactuators = 0;
     modelSettings.elementOrder = 'linear';
     
     plotSettings.realMesh = true;
@@ -137,7 +137,7 @@ if modelSettings.debug == true
     beam.N = 2;
     
     sensor.h = 25e-3;
-    sensor.N = 6;
+    sensor.N = 2;
     
     actuator.h = 25e-3;
     actuator.N = 2;    
@@ -280,11 +280,12 @@ if Np > 0
     Dmech = SS_modalr.D;
 
     % For piezo augmentation, the states need to be augmented-> q = [z;zd;Q;Qd]
-    patches = [sensors, actuators];
+    patches = [sensors, actuators, beam];
 
     % Piezo parameters
     [etas,es] = sensor.setupPiezo();
     [etaa,ea] = actuator.setupPiezo();
+    [etab,eb] = beam.setupPiezo();
     eta0 = sensor.eta0;
 
     T_s = sparse(zeros(modelSettings.Nsensors,numNodes));
@@ -295,7 +296,10 @@ if Np > 0
     Kpu_a = sparse(zeros(numNodes,numNodes*2));
     Kpp_a = sparse(zeros(numNodes,numNodes));
     
-    for i = 1:Np                        % For every patch
+    Kpu_b = sparse(zeros(numNodes,numNodes*2));
+    Kpp_b = sparse(zeros(numNodes,numNodes));
+    
+    for i = 1:length(patches)                        % For every patch
         elements = [patches(i).elements];
         
         switch patches(i).name([1:3])   % is sensor or actuator patch?
@@ -307,9 +311,13 @@ if Np > 0
                 e = ea;
                 eta = etaa;
                 h = actuator.h;
+            case {'Bea'}
+                e = ea;
+                eta = etaa;
+                h = beam.h;
         end
 
-        for j = 1:length(elements)      % For every element in the current patch
+        for j = 1:length(elements)      % For every element in the current body
                 % Elemental Kpu and Kpp matrices (Nguyen, 2018)
             Kpu_e = sparse(zeros(numNodes,numNodes*2));
             Kpp_e = sparse(zeros(numNodes,numNodes));
@@ -328,7 +336,10 @@ if Np > 0
             y3 = elements(j).pos(2,3);
 
             A_e = elements(j).Area();
-            Bu = 1/(2*A_e)*[  y2-y3,  0,      y3-y1,  0,      y1-y2,  0;      % Checked
+            if A_e < 0
+                error('NEGATIVE AREA!')
+            end
+            Bu = 1/(2*A_e)*[  y2-y3,  0,      y3-y1,  0,      y1-y2,  0;      % Checked!
                             0,      x3-x2,  0,      x1-x3,  0,      x2-x1;
                             x3-x2,  y2-y3,  x1-x3,  y3-y1,  x2-x1,  y1-y2];
             Bphi = -1/(2*A_e)*[  y2-y3,  y3-y1,  y1-y2;                       % Checked?
@@ -337,11 +348,14 @@ if Np > 0
             Kpu = A_e*Bphi'*e'*Bu;   
             Kpp = -A_e*Bphi'*eta*Bphi;
 
+            if patches(i).name(1:3) == 'Bea'
+                Kpp = eye(3);
+            end
+
             %% Put thes matrices at the right location in the larger elemental
             % matrix!
             Kpux = Kpu(:,[1,3,5]);
             Kpuy = Kpu(:,[2,4,6]);
-            Kpu = [Kpux, Kpuy];
 
             % Kpu matrix
             Kpu_e(n1,n1) = Kpux(1,1);   Kpu_e(n1,n1+numNodes) = Kpuy(1,1);
@@ -375,26 +389,32 @@ if Np > 0
                     Kpu_a = Kpu_a+Kpu_e;
                     Kpp_a = Kpp_a+Kpp_e;
                     T_a(i-Nsensors,[n1,n2,n3]) = T_a(i-Nsensors,[n1,n2,n3]) - ones(1,3)*A_e/3;
+                case {'Bea'}
+                    Kpu_b = Kpu_b+Kpu_e;
+                    Kpp_b = Kpp_b+Kpp_e;
             end
         end
     end
     
-    Kpu = Kpu_s+Kpu_a;    
-    Kpp = Kpp_s+Kpp_a;
+    Kpu = Kpu_s+Kpu_a + Kpu_b;    
+    Kpp = Kpp_s+Kpp_a + Kpp_b;
     
     % actuator input and output vectors --->>> q = [z;zd]
     T_s = T_s./sum(T_s,2)*sensor.eta33/sensor.h;
     T_a = T_a./sum(T_a,2)*actuator.eta33/actuator.h;
     Bp = [T_s',T_a'];    % [Sensors, Actuators]
-
+    
+    Kppi = pinv(full(Kpp));% Kpp\eye(size(Kpp));
+    Kppcond = cond(full(Kpp));
+    
     A = Amech+[zeros(Nmodes),   zeros(Nmodes);
-               Phi'*Kpu'*pinv(full(Kpp))*Kpu*Phi, zeros(Nmodes) ];     % Pinv instead of /! Might cause issues..
+               Phi'*Kpu'*Kppi*Kpu*Phi, zeros(Nmodes) ];     % Pinv instead of /! Might cause issues..
     B = [Bmech,[zeros(Nmodes,Np);
-                -Phi'*Kpu'*pinv(full(Kpp))*Bp]];
+                -Phi'*Kpu'*Kppi*Bp]];
     C = [Cmech;
-        -Bp'*pinv(full(Kpp))*Kpu*Phi,zeros(Np,Nmodes)];
+        -Bp'*Kppi*Kpu*Phi,zeros(Np,Nmodes)];
     D = [Dmech,                 zeros(size(Dmech,1),Np);
-        zeros(Np,size(Dmech,2)), Bp'*pinv(full(Kpp))*Bp];
+        zeros(Np,size(Dmech,2)), Bp'*Kppi*Bp];
 
     SS_tot = ss(full(A),full(B),full(C),D);
     
@@ -704,8 +724,8 @@ function qd = sysFun(t,q,A,B,modelSettings,simulationSettings)
         case {'force'}
             r = 0;
             if t > simulationSettings.stepTime
-                F = 1;
-                V = 0;    % Input voltage on the patch (I think)
+                F = 0;
+                V = 100;    % Input voltage on the patch (I think)
             else
                 F = 0;
                 V = 0;

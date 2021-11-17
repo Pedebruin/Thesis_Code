@@ -20,10 +20,10 @@ classdef body < handle & dynamicprops & matlab.mixin.Copyable
         zeta;
         
         % Piezo properties
-        d31 = 0;
-        d33 = 0;
-        s11 = 0;
-        eta33 = 0;
+        d31 = 1;
+        d33 = 1;
+        s11 = 1;
+        eta33 = 1;
         eta0 = 8.854187817620e-12;
         initA;
         A;
@@ -62,9 +62,10 @@ classdef body < handle & dynamicprops & matlab.mixin.Copyable
         end
         
         function [eta,e] = setupPiezo(obj)
-            
             e = [obj.d31, obj.d33, 0;
                 0, 0, 0]'/obj.s11;
+%             e = obj.d31/obj.s11;
+            e = randn(3,2);
 
             % From page 20 of paper!
             eta = eye(2)*(obj.eta33-obj.d31^2/obj.s11); % eye*eta33 
