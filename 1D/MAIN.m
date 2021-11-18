@@ -13,10 +13,10 @@ b = 40e-3;      % Total width
 
 % Model settings
 modelSettings.numEl = 10;
-modelSettings.sElements = [2,3,4];   % Write a smarter function for this later!
+modelSettings.sElements = [1:4];   % Write a smarter function for this later!
 modelSettings.dispInput = false;
 modelSettings.Nmodes = 10;
-modelSettings.measurementHeight = 0.95;        
+modelSettings.measurementHeight = 1;        
 
 % plotSettings
 plotSettings.plotNodes = true;
@@ -28,7 +28,7 @@ plotSettings.sensorPlot = true;
 % simulationSettings
 simulationSettings.simulate = true;
 simulationSettings.stepTime = 0.1;
-simulationSettings.dt = 0.001;
+simulationSettings.dt = 1e-3;
 simulationSettings.T = 2;
 
 simulationSettings.animate = false;
@@ -161,20 +161,22 @@ end
 Phi = Phi/(Phi'*M*Phi);     % Normalise w.r.t. mass matrix
 
 % Sensor equation according to K. Aktas
-H = 1e6;
+%[intS,~] = shapeFunctios();
+H = 1e6;                                        % Arbitrary gain (needs setup validation)
 z = sBeam.h/2+sBeam.ph;
 d31 = -180e-12;
 s11 = 16.1e-12;
 e31 = d31/s11;
 w = sBeam.pb;
-S = H*z*e31*w*[0,-1,0,1];
+S = H*z*e31*w*[0,-1,0,1];                       % Need to check this again (derivation)
 
 % Actuator equation according to K. Aktas
+%[~,intG] = shapeFunctios();
 Ep = sBeam.pE;
 d31 =  -180e-12;
 w = sBeam.pb;
 zbar = (sBeam.ph+sBeam.h)/2;
-G = Ep*d31*w*zbar*[0,-1,0,1]';
+G = Ep*d31*w*zbar*[0,-1,0,1]';                  % While we're at it, check this derivation aswell!
 
 % Damping matrix
 Cmodal = 2*Beam.zeta*sqrt(omega2);
@@ -225,15 +227,14 @@ sys = ss(A,B,C,[]);
 
 [~,wpeak] = hinfnorm(sys(1,1));
 wc = wpeak;
-zetac = 6*Beam.zeta;
-kc = 0.1;
+zetac = 10*Beam.zeta;
+kc = 10;
 
 PPF = tf(kc*wc^2,[1 2*zetac*wc wc^2]);
-PPF = -PPF*eye(nsElements);
+PPF = PPF*eye(nsElements);
 
 sys_fb = feedback(sys,PPF,[2:1+nsElements],[2:1+nsElements],1);
-sys = sys(1,1);
-sys_fb = sys_fb(1,1);
+
 %% Time simulation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if simulationSettings.simulate ==  true
     disp('Simulating...')
@@ -284,6 +285,7 @@ if simulationSettings.simulate ==  true
             ylabel 'V'
             title 'Output voltages'   
             stateAx = gca;
+            xlim([0,simulationSettings.T]);
         subplot(7,3,[13:21])
             bodeAx = gca;
             
@@ -360,18 +362,18 @@ if simulationSettings.simulate ==  true
                         xs = [t(i-1),t(i)];
                         ys = [measurement(i-1),measurement(i)];
                         y_fb = [measurement_fb(i-1),measurement_fb(i)];
-                        ysbeam = [y(1,i-1),y(1,i)];
+                        ysbeam = [y(2:nsElements+1,i-1),y(2:nsElements+1,i)];
                     else
                         xs = t(i);
                         ys = measurement(i);
                         ys_fb = measurement_fb(i);
-                        ysbeam = y(1,i);
+                        ysbeam = y(2:nsElements+1,i);
                     end
                 else
                     xs = t;
                     ys = measurement;
                     ys_fb = measurement_fb;
-                    ysbeam = y;
+                    ysbeam = y(2:nsElements+1,:);
                 end
                     sensorPlot = plot(measurementAx,xs,ys,'color',[0.3010 0.7450 0.9330]);
                     sensorfbPlot = plot(measurementAx,xs,ys_fb,'color',[0.8500 0.3250 0.0980]);
@@ -384,7 +386,7 @@ if simulationSettings.simulate ==  true
             elapsed = toc(tstart);
             
             if simulationSettings.animate == true
-                pause(max(simulationSettings.dt-elapsed,0));
+                %pause(max(simulationSettings.dt-elapsed,0));
             end
             if simulationSettings.pauseStart == true && i == 1 && simulationSettings.animate == true
                 disp('PAUSED, Press any key to continue');
@@ -406,27 +408,36 @@ end
 % end
 
 disp('Done!')
+function [int,intG] = shapeFunctions()
+syms L y
+
+A = [1, 0, 0, 0;
+        0, 1, 0, 0;
+        1, L, L^2, L^3;
+        0, 1, 2*L, 3*L^2];
+N = [1, y, y^2, y^3]/A;
+n1 = diff(N,y);
+n2 = diff(n1,y);
+
+intS = int(n2,0,L);
+intG = int(n1,0,L);
+end
 
 % odefun for ode45 etc..
 function qd = sysFun(t,q,A,B,modelSettings,simulationSettings)
     % Generic input!
     nsElements = length(modelSettings.sElements);
-    if t > simulationSettings.stepTime
-
-        F = 0.1;
+    if t >= simulationSettings.stepTime
+        F = 1;
         V = 0;    % Input voltage on the patch (I think)
-    elseif t > simulationSettings.stepTime + simulationSettings.dt
-        F = 0;
-        V = 0;
     else
         F = 0;
         V = 0;
     end
-    N = zeros(1,nsElements);
-    N(5) = 1;
-    N(4) = -1;
+    N = ones(1,nsElements);
+    N(1) = 4;
     % Evaluate system
-    U = F;
+    U = [F,N*V]';
     qd = A*q+B*U;
 
     if sum(isnan(q))>0 || sum(isnan(qd)) > 0
