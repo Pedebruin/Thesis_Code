@@ -103,10 +103,10 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
             end
             
             % Plot this element
-           eta = linspace(0,1,obj.N);
-           x = zeros(1,obj.N);
+           eta = linspace(0,1,10);
+           x = zeros(1,10);
            y = eta*obj.L + obj.pos(2,1);
-           for i = 1:obj.N
+           for i = 1:10
                x(i) = obj.interp(eta(i));
            end
            
@@ -126,6 +126,14 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
                    ntext = text(ax,x(end)+0.01,y(end),num2str(obj.number),'horizontalAlignment','left');
                    p = [p,ntext];
                end
+           end
+           
+           if plotSettings.elementNumbers == true   
+               if obj.sBeam == false
+                   color = 'k';
+               end
+               etext = text(ax,mean(x)+0.01,mean(y),num2str(obj.number),'horizontalAlignment','left','Color',color);
+               p = [p,etext];
            end
            
         end
