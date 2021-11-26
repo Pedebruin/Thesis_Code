@@ -119,11 +119,11 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
            bplot = plot(ax,x,y,'Color',color);
            p = bplot;
            if plotSettings.plotNodes == true
-               nplot = plot(ax,x(end),y(end),'o','Color',[0 0.4470 0.7410]);
+               nplot = plot(ax,x(1),y(1),'o','Color',[0 0.4470 0.7410]);
                p = [p,bplot, nplot];
                
                if plotSettings.nodeNumbers == true
-                   ntext = text(ax,x(end)+0.01,y(end),num2str(obj.number),'horizontalAlignment','left');
+                   ntext = text(ax,x(1)+0.01,y(1),num2str(obj.number),'horizontalAlignment','left');
                    p = [p,ntext];
                end
            end
