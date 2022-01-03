@@ -37,7 +37,7 @@ b = 40e-3;      % Total width
 patchL = 50e-3; % patch length
 
 % Model settings
-modelSettings.patches = []; %[0,0.25];                          % location of start of patches (y/L)
+modelSettings.patches = [0,0.25]; %[0,0.25];                          % location of start of patches (y/L)
 modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
 modelSettings.LbElements = 0.1;                         % Preferred length of beam elements (y/L) (will change slightly)
 
@@ -47,7 +47,7 @@ modelSettings.dispInput = false;                        % Use displacement at th
 modelSettings.Nmodes = 10;                               % Number of modes to be modelled (Can't be larger then the amount of nodes)
 modelSettings.measurementHeight = 1;                 % Height of the measurement
 
-modelSettings.fb = false;                               % Apply feedback control law?
+modelSettings.fb = true;                               % Apply feedback control law?
 
 modelSettings.L = L;                                    
 modelSettings.b = b;
@@ -96,8 +96,8 @@ nsElementsP = modelSettings.nsElementsP;            % Number of elements
 modelSettings.sElements = find(sElements);          % Which elements are smart?
 
 % Assembly
-numEl = length(Ls);
-numNodes = numEl+1;
+numEl = length(Ls); modelSettings.numEl = numEl;
+numNodes = numEl+1; modelSettings.numNodes = numEl+1;
 Nmodes = modelSettings.Nmodes;
 
 K = zeros(numNodes*2);
@@ -274,6 +274,8 @@ Cmodal = 2*Beam.zeta*sqrt(omega2);
 
 % External input B matrix (in d coordinates)
 Bext = zeros(numNodes*2,1);
+fNode = 3;                                  % force Node
+% Best(fNode*2) = 1;
 Bext(end-1) = 1;                          % Force at last node in x direction 
 
 % Base reference B matrix (in d coordinates)
@@ -363,8 +365,8 @@ end
 if modelSettings.fb == true
     [~,wpeak] = hinfnorm(sys(1,1));
     wc = wpeak;
-    zetac = 10*Beam.zeta;
-    kc = 100;
+    zetac = 15*Beam.zeta;
+    kc = 1e3;
 
     PPF = tf(kc*wc^2,[1 2*zetac*wc wc^2]);
     PPF = PPF*eye(nPatches);                                    % SISO PPF for every patch (just to test)
@@ -384,7 +386,7 @@ if simulationSettings.simulate ==  true
     q0sim = zeros(size(sys.A,1),1);     % Normal time simulation
     Asim = sys.A;
     Bsim = sys.B;
-    [t,q] = ode23t(@(t,z) sysFun(t,z,Asim,Bsim,modelSettings,simulationSettings),tvec,q0sim);
+    [t,q] = ode45(@(t,z) sysFun(t,z,Asim,Bsim,modelSettings,simulationSettings),tvec,q0sim);
     q = q';
     y = sys.C*q;
     dmat = Phi*q(1:Nmodes,:);
@@ -564,25 +566,10 @@ end
 
 disp('Done!')
 
-
 % FUNCTIONS!!
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-function plotMode(n,Phi,elements,plotSettings)
-    numEl = length(elements);
-    d = Phi(:,n);
-    d = d/max(abs(d));
-    
-    localElements = copy(elements);
-    
-    figure()
-    hold on
-    axis equal
-    for i = 1:numEl
-        localElements(i).update(d);
-        localElements(i).show([],plotSettings);
-    end
-end
 
+% Get element lengths for adaptive mesh
 function [Ls,sElements] = getLengths(modelSettings,sBeam)
 
     nPatches = length(modelSettings.patches);   % Number of patches
@@ -654,6 +641,7 @@ else
 end
 end
 
+% Compute analytical integrals for paper. 
 function [intS,intG] = shapeFunctions()
 syms L y
 
@@ -668,6 +656,10 @@ n2 = diff(n1,y);
 intS = int(n2,0,L);
 intG = int(n1,0,L);
 end
+
+% make bode plot of different modes for report
+
+
 
 % odefun for ode45 etc..
 function qd = sysFun(t,q,A,B,modelSettings,simulationSettings)
