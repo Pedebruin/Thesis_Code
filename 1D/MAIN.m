@@ -23,9 +23,14 @@ questions or find an error (very probable) dont hesitate to send me a
 message!
 
 XXX Pim
+
+This script requires:
+    Symbolic math toolbox
+    Control system toolbox
+    Robust Control toolbox
 %}
 
-clear all
+clear
 close all
 set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',12);  
 
@@ -37,16 +42,25 @@ b = 40e-3;      % Total width
 patchL = 50e-3; % patch length
 
 % Model settings
-modelSettings.patches = [0,0.25]; %[0,0.25];                          % location of start of patches (y/L)
+% Smart patches (Piezo)
+modelSettings.patches = []; %[0,0.25];                          % location of start of patches (y/L)
 modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
 modelSettings.LbElements = 0.1;                         % Preferred length of beam elements (y/L) (will change slightly)
 
+% Accelerometers
+modelSettings.Acc = [0.1,1];                            % Location of accelerometers
+modelSettings.mAcc = 0.01;                              % Mass of accelerometers
+
+% Strain patches (TODO)
+
+% Modelling 
 modelSettings.dispInput = false;                        % Use displacement at the base as input?
     modelSettings.kBase = 1e10;                         % Stiffness of spring at base
     modelSettings.cBase = 0.01;
 modelSettings.Nmodes = 10;                               % Number of modes to be modelled (Can't be larger then the amount of nodes)
 modelSettings.measurementHeight = 1;                 % Height of the measurement
 
+% Feedback
 modelSettings.fb = true;                               % Apply feedback control law?
 
 modelSettings.L = L;                                    
@@ -87,29 +101,50 @@ sBeam.pE = 5.2e10;
 sBeam.pmu = 0.334;
 sBeam.prho = 7800;
 
+% strain element parameters (TODO)
+
 %% Matrix setup 
 nPatches = length(modelSettings.patches);           % Number of patches
-nsElementsP = modelSettings.nsElementsP;            % Number of elements
+nsElementsP = modelSettings.nsElementsP;            % Number of elements per patch
+nAcc = length(modelSettings.Acc);
 
 % Get element lengths! (Function at the bottom)
 [Ls,sElements] = getLengths(modelSettings,sBeam);   % Vector with for every element its length, and which elements are smart
 modelSettings.sElements = find(sElements);          % Which elements are smart?
+
+% Find accelerometer locations
+accHeights = L*modelSettings.Acc;
+nodeHeights = [0,cumsum(Ls)];
+accPos = zeros(nAcc,2);         % accelerometer positions [Element, eta]
+
+for i = 1:nAcc
+    accHeight = accHeights(i);
+    diff = nodeHeights-accHeight;
+    upperNode = find(round(diff,4)>=0,1);         % below this node
+    lowerNode = upperNode-1;            % Above this node
+    accElement = lowerNode;             % This element!
+
+    % Natural element coordinate (How far along this element, for integration)
+    eta = (accHeight-nodeHeights(lowerNode))/(nodeHeights(upperNode)-nodeHeights(lowerNode));
+    accPos(i,1) = accElement;
+    accPos(i,2)= eta;
+end
 
 % Assembly
 numEl = length(Ls); modelSettings.numEl = numEl;
 numNodes = numEl+1; modelSettings.numNodes = numEl+1;
 Nmodes = modelSettings.Nmodes;
 
-K = zeros(numNodes*2);
+K = zeros(numNodes*2);                      
 M = zeros(numNodes*2);
-elements = element.empty(numEl,0);
+elements = element.empty(numEl,0);          % Empty element array
 
 % Loops over all elements, constructs their elemental K and M matrices and
 % stores them in element objects aswell (class defenition in element.m).
 % Also constructs the system K and M matrices by putting elemental matrices
 % in there. 
 for i = 1:numEl
-    % Elemental coordinates: q = [v1,theta1,v2,theta2]';
+    % Elemental coordinates: qe = [v1,theta1,v2,theta2]';
     n1 = i;     % Starting node
     n2 = i+1;   % Ending node
   
@@ -121,10 +156,13 @@ for i = 1:numEl
     end
     
         El.L = Ls(i);   % Give element correct length
+        El.ainv();      % Calculate Ainv for interpolation (speed)
+        El.number = i;
         
-        % Calculate stiffness 
-        Ib = El.b*El.h^3/12;
-        Ip = El.pb*El.ph^3/12 + El.pb*El.ph*(El.ph+El.h)^2/4;
+        % Calculate stiffness (for normal beam ph pb will be zero, so no
+        % additional terms). 
+        Ib = El.b*El.h^3/12;                        % Beam only
+        Ip = El.pb*El.ph^3/12 + El.pb*El.ph*(El.ph+El.h)^2/4; % Patch only
         
         EI = El.E*Ib+2*El.pE*Ip;                     % Equivalent EI and Rho*A (for normal element, extra term is 0)
         rhoA = El.b*(El.rho*El.h+2*El.prho*El.ph);
@@ -138,7 +176,21 @@ for i = 1:numEl
         Me = rhoA*El.L/420* [156, 22*El.L, 54, -13*El.L;
                             22*El.L, 4*El.L^2, 13*El.L, -3*El.L^2;
                             54, 13*El.L, 156, -22*El.L;
-                            -13*El.L, -3*El.L^2, -22*El.L, 4*El.L^2];    
+                            -13*El.L, -3*El.L^2, -22*El.L, 4*El.L^2];   
+
+    % Add point masses for accelerometers
+    if ismember(El.number,accPos(:,1))              % Does this element carry an accelerometer?
+        accNumber = find(accPos(:,1) == El.number); % Number of current accelerometer
+        eta = accPos(accNumber,2);
+
+        alpha = eta*El.L;                               % Distance along the element
+        phi = [1, alpha, alpha^2, alpha^3]*El.Ainv;             % Shape functions at location
+        Meacc = modelSettings.mAcc*(phi'*phi);      % Mass matrix due to accelerometer
+        Me = Me + Meacc;
+
+        % Also tell the element
+        El.Acc = true;
+    end
     
     % Apply boundary condition to first node
     if n1 == 1                                      % If the node we are looking at is the first one
@@ -162,9 +214,9 @@ for i = 1:numEl
             Me(2,2) = 1;                            % Fix only the rotary acceleration (not the displacement)
         end
     end
-    
+
     % Assembly. Since everything is nicely connected in sequence (1to2to3..) , the
-    % elemenental matrices stay nicely together.
+    % elemenental matrices stay nicely together in a diagonal fasion.
     K(n1*2-1:n2*2,n1*2-1:n2*2) = K(n1*2-1:n2*2,n1*2-1:n2*2) + Ke;   % K
     M(n1*2-1:n2*2,n1*2-1:n2*2) = M(n1*2-1:n2*2,n1*2-1:n2*2) + Me;   % M
     
@@ -184,12 +236,7 @@ end
 
 % Find mode shapes and natural frequencies
 if modelSettings.Nmodes <= numEl
-    if modelSettings.dispInput == true
-%         [Phi,omega2] = eigs(K,M,modelSettings.Nmodes+1,'smallestabs');      % Compensate for 1 weird mode
         [Phi,omega2] = eig(K,M);
-    else
-        [Phi,omega2] = eig(K,M);
-    end
 else
     error('Number of elements is smaller then the number of modes requested. Modal decomposition will not work!')
 end
@@ -198,25 +245,8 @@ Phi = Phi(:,1:Nmodes+2);
 omega2 = omega2(1:Nmodes+2,1:Nmodes+2);
 
 %Snip off weird modes 
-%{
-    When displacement input is turned on, the first eignemode is a rotation
-    around the first node. This should not be possible as this rotation is
-    fixed. The other modes are correct however. 
-
-    When dispInput is turned off, the first node is fixed but the first two
-    eigenmodes do show a movement of this node. This should not be
-    possible. The other modes are correct however. 
-    
-    I think this is not very influential, they are snipped off, but might
-    need to look at this later if model turns out inaccurate. 
-%}
-if modelSettings.dispInput == true
-    Phi = Phi(:,3:end);
-    omega2 = omega2(3:end,3:end);
-else 
-    Phi = Phi(:,3:end);
-    omega2 = omega2(3:end,3:end);  
-end
+Phi = Phi(:,3:end);
+omega2 = omega2(3:end,3:end);
 
 % Check eigenfrequencies
 f = diag(sqrt(omega2)/(2*pi));
@@ -228,115 +258,133 @@ analyticalf1 = lambda^2/(2*pi*L^2)*sqrt(Beam.E*I/(Beam.rho*S));
 
 delta = 1*L^3/(3*Beam.E*I);
 
-if abs(f(1) - analyticalf1) > 0.001 && nPatches == 0 && modelSettings.dispInput == false  % Check only when there are no patches
+if abs(f(1) - analyticalf1) > 0.001 && nPatches == 0 && modelSettings.dispInput == false && nAcc == 0 % Check only when there are no patches
     warning('Eigenfrequencies do not correspond')
 end
 
 %% Dynamical matrices setup
 Phi = Phi/(Phi'*M*Phi);     % Normalise w.r.t. mass matrix
 
-% Sensor equation according to K. Aktas
-[intS,~] = shapeFunctions();
-H = 1e6;                                        % Arbitrary gain (needs setup validation)
-z = sBeam.h/2+sBeam.ph;                         % Effective height
-d31 = -180e-12;                                 % Piezo coupling d
-s11 = 16.1e-12;
-e31 = d31/s11;                                  % Piezo coupling e
-w = sBeam.pb;                                   % width of beam
-S = H*z*e31*w*intS;                       % Need to check this again (derivation)!
-
-% Actuator equation according to K. Aktas
-[~,intG] = shapeFunctions();
-Ep = sBeam.pE;
-d31 =  -180e-12;
-w = sBeam.pb;
-zbar = (sBeam.ph+sBeam.h)/2;
-%intG = [0,-1,0,1];
-G = Ep*d31*w*zbar*intG';                  % While we're at it, check this derivation aswell!
-
-% Voltage input B matrix (in d coordinates) and output matrix C for the
-% patches
-nsElements = length(modelSettings.sElements);
-Bg = zeros(numNodes*2,nPatches);
-Cs = zeros(nPatches,numNodes*2);
-for i = 1:nPatches
-    for j = 1:nsElementsP
-        el = modelSettings.sElements((i-1)*nsElementsP + j);
-        n1 = elements(el).neighbours(1);
-
-        Bg(n1*2-1:n1*2+2,i) = Bg(n1*2-1:n1*2+2,i) + G;
-        Cs(i,n1*2-1:n1*2+2) = Cs(i,n1*2-1:n1*2+2) + S;
+% Piezo in & outputs
+    % Sensor equation according to K. Aktas
+    [intS,~] = shapeFunctions();
+    H = 1e6;                                        % Arbitrary gain (needs setup validation)
+    z = sBeam.h/2+sBeam.ph;                         % Effective height
+    d31 = -180e-12;                                 % Piezo coupling d
+    s11 = 16.1e-12;
+    e31 = d31/s11;                                  % Piezo coupling e
+    w = sBeam.pb;                                   % width of beam
+    S = H*z*e31*w*intS;                       % Need to check this again (derivation)!
+    
+    % Actuator equation according to K. Aktas
+    [~,intG] = shapeFunctions();
+    Ep = sBeam.pE;
+    d31 =  -180e-12;
+    w = sBeam.pb;
+    zbar = (sBeam.ph+sBeam.h)/2;
+    %intG = [0,-1,0,1];
+    G = Ep*d31*w*zbar*intG';                  % While we're at it, check this derivation aswell!
+    
+    % Voltage input B matrix (in d coordinates) and output matrix C for the
+    % patches
+    nsElements = length(modelSettings.sElements);
+    Bg = zeros(numNodes*2,nPatches);
+    Cs = zeros(nPatches,numNodes*2);
+    for i = 1:nPatches
+        for j = 1:nsElementsP
+            el = modelSettings.sElements((i-1)*nsElementsP + j);
+            n1 = elements(el).neighbours(1);
+    
+            Bg(n1*2-1:n1*2+2,i) = Bg(n1*2-1:n1*2+2,i) + G;
+            Cs(i,n1*2-1:n1*2+2) = Cs(i,n1*2-1:n1*2+2) + S;
+        end
     end
-end
+
+% Bmatrices
+    % External input B matrix (in d coordinates)
+        Bext = zeros(numNodes*2,1);
+        fNode = 3;                                      % force Node
+        Bext(end-1) = 1;                                % Force at last node in x direction 
+    
+    % Base reference B matrix (in d coordinates)
+        Bx = zeros(numNodes*2,1);
+        if modelSettings.dispInput == true
+            Bx(1) = modelSettings.kBase;
+        end
+        
+        Bxd = zeros(numNodes*2,1);
+        if modelSettings.dispInput == true
+            Bxd(1) = modelSettings.cBase;
+        end
+
+% C matrices
+    % Base location C marix (in d coordinates)
+        Cx = zeros(1,numNodes*2);
+        Cx(1) = 1;
+    
+    % Measurement C matrix for laser measurement
+        % Find interpolate nodes
+        height = modelSettings.measurementHeight*L;
+        pos = unique([elements.pos]');
+        diff = pos-height;
+        lowerNodes = find(diff<0);
+        interpNodes = [lowerNodes(end),lowerNodes(end)+1];  
+        
+        % Corresponding elements
+        for i = 1:numEl
+            if interpNodes == elements(i).neighbours          
+                interpEl = i;
+            elseif interpNodes(1) == elements(i).neighbours(2) && interpNodes(2) > numNodes % If exactly at last node
+                interpEl = i-1;
+                interpNodes = interpNodes-1;
+            end
+        end
+        
+        % local coordinate alpha
+        alpha = height - pos(interpNodes(1));                       % alpha = eta*obj.L
+        N = [1, alpha, alpha^2, alpha^3]*elements(interpEl).Ainv;
+        Cmeasurement = zeros(1,numNodes*2);                         
+        Cmeasurement(interpNodes(1)*2-1:interpNodes(1)*2+2) = N;    % Construct C from this (cubic interpolation)
+    
+    % Acceleration measurement C matrix
+        Cacc = zeros(nAcc,numNodes*2);
+        for i = 1:nAcc
+            interpEl = accPos(i,1);
+            alpha = accPos(i,2);
+            interpNodes = [interpEl,interpEl+1];
+            N = [1, alpha, alpha^2, alpha^3]*elements(interpEl).Ainv;
+            Cacc(i,interpNodes(1)*2-1:interpNodes(1)*2+2) = N;
+        end
+        
+
 
 % Damping matrix 
-Cmodal = 2*Beam.zeta*sqrt(omega2);
+    Cmodal = 2*Beam.zeta*sqrt(omega2);
 
-% External input B matrix (in d coordinates)
-Bext = zeros(numNodes*2,1);
-fNode = 3;                                  % force Node
-% Best(fNode*2) = 1;
-Bext(end-1) = 1;                          % Force at last node in x direction 
-
-% Base reference B matrix (in d coordinates)
-Bx = zeros(numNodes*2,1);
-if modelSettings.dispInput == true
-    Bx(1) = modelSettings.kBase;
-end
-
-Bxd = zeros(numNodes*2,1);
-if modelSettings.dispInput == true
-    Bxd(1) = modelSettings.cBase;
-end
-
-% Base location C marix (in d coordinates)
-Cx = zeros(1,numNodes*2);
-Cx(1) = 1;
-
-% Measurement C matrix (in d coordinates) (have to interpolate between two
-% nodes)
-    % Find interpolate nodes
-height = modelSettings.measurementHeight*L;
-pos = unique([elements.pos]');
-diff = pos-height;
-lowerNodes = find(diff<0);
-interpNodes = [lowerNodes(end),lowerNodes(end)+1];  
-
-    % Corresponding elements
-for i = 1:numEl
-    if interpNodes == elements(i).neighbours          
-        interpEl = i;
-    elseif interpNodes(1) == elements(i).neighbours(2) && interpNodes(2) > numNodes % If exactly at last node
-        interpEl = i-1;
-        interpNodes = interpNodes-1;
-    end
-end
-
-    % natural coordinate alpha
-alpha = height - pos(interpNodes(1));
-N = [1, alpha, alpha^2, alpha^3]*elements(interpEl).Ainv;
-Cmeasurement = zeros(1,numNodes*2);                         
-Cmeasurement(interpNodes(1)*2-1:interpNodes(1)*2+2) = N;  % Construct C from this (cubic interpolation)
-
-% Construct full system 
+%% Construct full system 
 A = [zeros(Nmodes),eye(Nmodes);
     -omega2,-Cmodal];
 B = [zeros(Nmodes,nPatches+3);                          
-    Phi'*Bext, Phi'*Bx, Phi'*Bxd, Phi'*Bg];                       % [Force input, Base force, Base force, Piezo inputs]
+    Phi'*[Bext,Bx,Bxd,Bg]];                             % [Force input, Base force, Base force, Piezo inputs]
 C = [Cmeasurement*Phi, zeros(1,Nmodes);                 % Laser measurement
     Cx*Phi,zeros(1,Nmodes);                             % Base position
     zeros(1,Nmodes),Cx*Phi;                             % Base velocity
-    Cs*Phi,zeros(nPatches,Nmodes)];                     % Piezo outputs
+    Cs*Phi,zeros(nPatches,Nmodes);                      % Piezo outputs
+    -Cacc*Phi*omega2, -Cacc*Phi*Cmodal];                % Accelerometer outputs
+D = [zeros(nPatches+3,size(B,2));                       % No throughput laser,base and piezo measurements
+    Cacc*(Phi*Phi')*[Bext,Bx,Bxd,Bg]];                  % Throughput for acceleration measurements!
 
-sys = ss(A,B,C,[]);
+sys = ss(A,B,C,D);
 if modelSettings.dispInput == true          
     sys = feedback(sys,eye(2),[2,3],[2,3],-1);
 end
 
 % Cut out unescessary inputs and outputs!
-tvec = 1:3+nPatches;
-tvec(3) = [];
-sys = sys(tvec,tvec);
+inputVec = 1:3+nPatches;
+outputVec = 1:3+nPatches+nAcc;
+inputVec(3) = [];       % Remove base velocity input
+outputVec(3) = [];      % Remove base velocity output
+sys = sys(outputVec,inputVec);
 
 %{
 The total model looks like:
@@ -354,6 +402,10 @@ Inputs          Model           Outputs
 |a3|          =>|   sys     |=> |s3|        
 |..|            |           |   |..|   
 |an|            |___________|   |sn|
+                                |a1|
+                                |a2|
+                                |..|
+                                |an|
 %}
 
 % Apply feedback
@@ -371,7 +423,7 @@ if modelSettings.fb == true
     PPF = tf(kc*wc^2,[1 2*zetac*wc wc^2]);
     PPF = PPF*eye(nPatches);                                    % SISO PPF for every patch (just to test)
 
-    sys_fb = feedback(sys,PPF,[3:2+nPatches],[3:2+nPatches],1); % Same system as before, only with ppf
+    sys_fb = feedback(sys,PPF,3:2+nPatches,3:2+nPatches,1); % Same system as before, only with ppf
 end    
 
 %% Time simulation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -392,6 +444,7 @@ if simulationSettings.simulate ==  true
     dmat = Phi*q(1:Nmodes,:);
     measurement = y(1,:);
     baseLocation = y(2,:);
+    accMeasurement = y(nPatches+3:end,:);
     
     if modelSettings.fb == true
         disp('Simulating fb...')
@@ -407,8 +460,7 @@ if simulationSettings.simulate ==  true
     if simulationSettings.plot == true
         disp('Plotting simulation...')
         figure()
-        %sgtitle(['Beam with ',modelSettings.Input,' input'])
-        subplot(7,3,[1,4,7,10]) % Beam plot
+        subplot(12,3,(0:8)*3+1) % Beam plot
             hold on
             grid on
             xlabel 'm'
@@ -418,14 +470,14 @@ if simulationSettings.simulate ==  true
             ylim([0,1.2*L])
             title 'Beam plot'
             beamAx = gca;
-        subplot(7,3,[2,3,5,6])
+        subplot(12,3,[2,3,5,6,8,9])
             hold on
             grid on
             ylabel 'displasement [m]'
             title 'Laser Measurement'
             measurementAx = gca;
             xlim([0,simulationSettings.T]);
-        subplot(7,3,[8,9,11,12]);
+        subplot(12,3,[11,12,14,15,17,18]);
             hold on
             grid on
             xlabel 'time [s]'
@@ -433,7 +485,15 @@ if simulationSettings.simulate ==  true
             title 'Output voltages'   
             stateAx = gca;
             xlim([0,simulationSettings.T]);
-        subplot(7,3,[13:21])
+        subplot(12,3,[20,21,23,24,26,27])
+            hold on
+            grid on
+            xlabel 'time [s]'
+            ylabel '$m/s^2$'
+            title 'Output accelerations'   
+            accAx = gca;
+            xlim([0,simulationSettings.T]);
+        subplot(12,3,28:36)
             bodeAx = gca;
             
         % Plot bode
@@ -506,7 +566,7 @@ if simulationSettings.simulate ==  true
                 simPlots = [simPlots, laser];
             end
             
-            % Plot laser measurement & Voltages
+            % Plot laser measurement, voltages and accelerations
             if plotSettings.sensorPlot == true
                 if simulationSettings.animate == true
                     if i > 1
@@ -569,7 +629,7 @@ disp('Done!')
 % FUNCTIONS!!
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% Get element lengths for adaptive mesh
+% Get element lengths for adaptive mesh (Taking smart patches into account)
 function [Ls,sElements] = getLengths(modelSettings,sBeam)
 
     nPatches = length(modelSettings.patches);   % Number of patches
@@ -577,68 +637,67 @@ function [Ls,sElements] = getLengths(modelSettings,sBeam)
     nsElements = nPatches*nsElementsP;          % Number of smart elements in total
     L = modelSettings.L;
 
-if ~isempty(modelSettings.patches)
-    ngaps = nPatches+1;                         % Number of gaps in theory
-    gaps = zeros(1,ngaps);                      
-
-    for i = 1:ngaps% Get the length of every gap (between the patches)
-        if i == 1                   % The first gap
-            gaps(i) = modelSettings.patches(i)*L; 
-        elseif i <= nPatches                       % The rest of the gaps
-            gaps(i) = modelSettings.patches(i)*L-(sum(gaps(1:i))+(i-1)*sBeam.L*nsElementsP);
-        else
-            gaps(i) = L-(sum(gaps(1:i))+(i-1)*sBeam.L*nsElementsP);
-        end
-    end
-
-    % Catch some errors here already
-    if sum(gaps)+nPatches*sBeam.L*nsElementsP - L > 0
-        error('Gaps are not correct (do not sum up to total length of beam)')
-    end
-    for i = 1:length(gaps)
-        if gaps(i) < 0 
-            error('Patches are too close together! (They overlap)')
-        end
-    end
-
-    nGapElements = ceil(gaps/(modelSettings.LbElements*L)); % Get number of elements per gap
-    numEl = sum(nGapElements)+nsElements;                   % Total number of elements
-
-    gelementLengths = cell(ngaps,1);                         % Intermediate cell array containing lengths of elements in gaps
-    for i = 1:ngaps
-        elementL = gaps(i)/nGapElements(i);
-        gelementLengths{i} = ones(1,nGapElements(i))*elementL;
-    end
-
-    pelementLengths = cell(nPatches,1);
-    for i = 1:nPatches
-        elementL = sBeam.L;
-        pelementLengths{i} = ones(1,modelSettings.nsElementsP)*elementL;
-    end
-
-    Ls = [];
-    sElements = [];
-    for i = 1:nPatches+1
-       if i <= nPatches
-           Ls = [Ls,gelementLengths{i},pelementLengths{i}];
-           sElements = [sElements,zeros(1,length(gelementLengths{i})),ones(1,length(pelementLengths{i}))];
-       else
-           Ls = [Ls,gelementLengths{i}];
-           sElements = [sElements,zeros(1,length(gelementLengths{i}))];
-       end
-    end
+    if ~isempty(modelSettings.patches)
+        ngaps = nPatches+1;                         % Number of gaps in theory
+        gaps = zeros(1,ngaps);                      
     
-    if round(sum(Ls) - L,4) > 0
-        error('Ls is not correct! (not the same as L')
+        for i = 1:ngaps% Get the length of every gap (between the patches)
+            if i == 1                   % The first gap
+                gaps(i) = modelSettings.patches(i)*L; 
+            elseif i <= nPatches                       % The rest of the gaps
+                gaps(i) = modelSettings.patches(i)*L-(sum(gaps(1:i))+(i-1)*sBeam.L*nsElementsP);
+            else
+                gaps(i) = L-(sum(gaps(1:i))+(i-1)*sBeam.L*nsElementsP);
+            end
+        end
+    
+        % Catch some errors here already
+        if sum(gaps)+nPatches*sBeam.L*nsElementsP - L > 0
+            error('Gaps are not correct (do not sum up to total length of beam)')
+        end
+        for i = 1:length(gaps)
+            if gaps(i) < 0 
+                error('Patches are too close together! (They overlap)')
+            end
+        end
+    
+        nGapElements = ceil(gaps/(modelSettings.LbElements*L)); % Get number of elements per gap
+    
+        gelementLengths = cell(ngaps,1);                         % Intermediate cell array containing lengths of elements in gaps
+        for i = 1:ngaps
+            elementL = gaps(i)/nGapElements(i);
+            gelementLengths{i} = ones(1,nGapElements(i))*elementL;
+        end
+    
+        pelementLengths = cell(nPatches,1);
+        for i = 1:nPatches
+            elementL = sBeam.L;
+            pelementLengths{i} = ones(1,modelSettings.nsElementsP)*elementL;
+        end
+    
+        Ls = [];
+        sElements = [];
+        for i = 1:nPatches+1
+           if i <= nPatches
+               Ls = [Ls,gelementLengths{i},pelementLengths{i}];
+               sElements = [sElements,zeros(1,length(gelementLengths{i})),ones(1,length(pelementLengths{i}))];
+           else
+               Ls = [Ls,gelementLengths{i}];
+               sElements = [sElements,zeros(1,length(gelementLengths{i}))];
+           end
+        end
+        
+        if round(sum(Ls) - L,4) > 0
+            error('Ls is not correct! (not the same as L')
+        end
+        if sum(sElements) - nsElements > 0
+            error('sElements is incorrect!')
+        end
+    else
+        nElements = 1/modelSettings.LbElements;
+        Ls = ones(1,nElements)*L/nElements;
+        sElements = [];
     end
-    if sum(sElements) - nsElements > 0
-        error('sElements is incorrect!')
-    end
-else
-    nElements = 1/modelSettings.LbElements;
-    Ls = ones(1,nElements)*L/nElements;
-    sElements = [];
-end
 end
 
 % Compute analytical integrals for paper. 
@@ -664,7 +723,6 @@ end
 % odefun for ode45 etc..
 function qd = sysFun(t,q,A,B,modelSettings,simulationSettings)
     % Generic input!
-    nsElements = length(modelSettings.sElements);
     if t >= simulationSettings.stepTime
         F = 1;
         r = 0;%5e-3;

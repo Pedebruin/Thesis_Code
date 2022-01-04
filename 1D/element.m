@@ -6,6 +6,7 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
         neighbours;                         % Neighbouring nodes
                 
         sBeam = false;                      % Switch to know if it is a smart element
+        Acc = false;                        % Switch to know if it has an accelerometer
         
         N;                                  % Number of interpolation points (for plotting)
         Ainv;                               % Inverse of interpolation function
@@ -50,19 +51,8 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
             obj.pos = initPos;
             obj.Ke = Ke;
             obj.Me = Me;
-            
-            
-            % ALso already calculate the inverse of the A matrix for
-            % interpolation so that that is not necessary in the loop
-            % later
-            
-           A = [1, 0, 0, 0;                 % p87
-               0, 1, 0, 0;
-               1, obj.L, obj.L^2, obj.L^3;
-               0, 1, 2*obj.L, 3*obj.L^2]; 
-           obj.Ainv = eye(4)/A;
         end
-        
+
         % update(), Updates the position of the node with the displacement
         function update(obj,d)
             n1 = obj.neighbours(1);
@@ -80,6 +70,19 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
                         tpos1,tpos2];
         end
         
+        % Inverse calculation (avoid doing it often)
+        function obj = ainv(obj)
+            % Already calculate the inverse of the A matrix for
+            % interpolation so that that is not necessary in the loop
+            % later
+            
+           A = [1, 0, 0, 0;                 % p87
+               0, 1, 0, 0;
+               1, obj.L, obj.L^2, obj.L^3;
+               0, 1, 2*obj.L, 3*obj.L^2]; 
+           obj.Ainv = eye(4)/A;
+        end
+
         % Interpolation between nodes
         function x = interp(obj,eta)
             % Use cubic interpolation function to find x value inbetween
@@ -137,5 +140,6 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
            end
            
         end
-   end
+    end
+
 end
