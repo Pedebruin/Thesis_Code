@@ -132,7 +132,7 @@ end
 if nAcc > 0                         % If there are accelerometers
     ts = ones(nAcc,1)*t;
     accOutputs = y(nPatches+2:end,:);
-    plot(accAx,ts,accOutputs);
+    plot(accAx,ts',accOutputs');
 end
 
 drawnow;
