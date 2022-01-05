@@ -30,6 +30,7 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
 
         % Accelerometer properties
         accEta = 0;
+        accNumber = 0;
         
         % Elemental matrices        
         Ke;                                 % Elemental stiffness matrix
@@ -121,9 +122,10 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
            else
                color = [0 0.4470 0.7410];
            end
-           
-           bplot = plot(ax,x,y,'Color',color);
+          bplot = plot(ax,x,y,'Color',color);
            p = bplot;
+
+           % Plot nodes
            if plotSettings.plotNodes == true
                nplot = plot(ax,x(1),y(1),'o','Color',[0 0.4470 0.7410]);
                p = [p,bplot, nplot];
@@ -134,12 +136,34 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
                end
            end
            
+           % Plot element numbers
            if plotSettings.elementNumbers == true   
                if obj.sBeam == false
                    color = 'k';
                end
                etext = text(ax,mean(x)+0.01,mean(y),num2str(obj.number),'horizontalAlignment','left','Color',color);
                p = [p,etext];
+           end
+
+           % Plot acceleromters
+           if plotSettings.accelerometers == true
+               if obj.Acc == true
+                   for i = 1:length(obj.accEta)
+                       accx = obj.interp(obj.accEta(i));
+                       accy = obj.accEta(i)*obj.L + obj.pos(2,1);
+                       acc = plot(ax,accx,accy,'x',...
+                                            'MarkerSize',10,...
+                                            'lineWidth',2,...
+                                            'Color',[0.4660 0.6740 0.1880]);
+                       p = [p,acc];
+
+                       % Accelerometer num
+                       if plotSettings.accNumbers == true
+                          atext = text(ax,accx-0.01,accy,num2str(obj.accNumber(i)),'horizontalAlignment','right','Color',[0.4660 0.6740 0.1880]);
+                          p = [p,atext];
+                       end
+                   end
+               end
            end
            
         end

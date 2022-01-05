@@ -43,12 +43,12 @@ patchL = 50e-3; % patch length
 
 % Model settings
 % Smart patches (Piezo)
-modelSettings.patches = [0.25]; %[0,0.25];                          % location of start of patches (y/L)
+modelSettings.patches = [0,0.5];                             % location of start of patches (y/L)
 modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
 modelSettings.LbElements = 0.1;                         % Preferred length of beam elements (y/L) (will change slightly)
 
 % Accelerometers
-modelSettings.Acc = [0.25,1];                            % Location of accelerometers
+modelSettings.Acc = [0.45,0.85];                            % Location of accelerometers
 modelSettings.mAcc = 0.01;                              % Mass of accelerometers
 
 % Strain patches (TODO)
@@ -56,37 +56,40 @@ modelSettings.mAcc = 0.01;                              % Mass of accelerometers
 % Modelling 
 modelSettings.Nmodes = 10;                               % Number of modes to be modelled (Can't be larger then the amount of nodes)
 modelSettings.measurementHeight = 1;                 % Height of the measurement
+modelSettings.forceHeight = 0.5;                    % Height of the input force. 
 
 modelSettings.L = L;                                    
 modelSettings.b = b;
 
 % plotSettings
-plotSettings.plotNodes = true;                          % Plot the nodes
-    plotSettings.nodeNumbers = false;                   % Plot the node numbers
-plotSettings.elementNumbers = true;                     % Plot the element numbers
-plotSettings.sensor = true;                             % Plot the sensor in beam plot (red line)
+plotSettings.plot = true;                         % Plot the simulation?
+    plotSettings.plotNodes = true;                          % Plot the nodes
+        plotSettings.nodeNumbers = false;                   % Plot the node numbers
+    plotSettings.elementNumbers = true;                     % Plot the element numbers
+    plotSettings.sensor = true;                             % Plot the sensor in beam plot (red line)
+    plotSettings.Input = false;                              % Plot given force input in the sensor plot
+    plotSettings.accelerometers = true;                     % Plot accelerometers?
+        plotSettings.accNumbers = true;            % Plot acceleromter numbers?
 
 % simulationSettings
 simulationSettings.simulate = true;                     % Simulate at all?
-simulationSettings.waitBar = true;                      % Give waitbar and cancel (takes longer, but good in debugging)
+simulationSettings.waitBar = false;                      % Give waitbar and cancel (takes longer, but good in debugging)
     % Time settings
     simulationSettings.dt = 1e-3;                       % Sampling time
     simulationSettings.T = 2;                           % Total simulation time
     
     % Input settings
     simulationSettings.distInput = 1;                   % Which input is the disturbance?
-        simulationSettings.stepTime = [1,1.1];          % Location of input step ([time], [time endtime], [-.] )
+        simulationSettings.stepTime = [];          % Location of input step ([time], [time endtime], [] )
             simulationSettings.stepAmp = 1;             % Step amplitude
-        simulationSettings.impulseTime = 0.1;           % Location of input impulse ([time], [-.])
+        simulationSettings.impulseTime = [0.1];           % Location of input impulse ([time], [])
             simulationSettings.impulseAmp = 1;          % Inpulse amplitude
-        simulationSettings.harmonicTime = 1;            % Harmonic input start time ([time], [-.])
-            simulationSettings.harmonicFreq = 1;        % Frequency of sinusoidal input ([freq], [-.])
+        simulationSettings.harmonicTime = [];            % Harmonic input start time ([time], [])
+            simulationSettings.harmonicFreq = 1;        % Frequency of sinusoidal input ([freq], [])
             simulationSettings.harmonicAmp = 1;         % Frequency input amplitude [Hz]
-        simulationSettings.randTime = 1;                % random input start time ([time], [-.])
+        simulationSettings.randTime = [];                % random input start time ([time], [])
             simulationSettings.randInt = [-1,1];        % random input interval (uniformly distributed)
 
-% Plot
-simulationSettings.plot = true;                         % Plot the simulation?
 
 % beam element parameters (for every beam element)
 Beam = element('Beam');
@@ -133,6 +136,7 @@ for i = 1:nAcc
     eta = (accHeight-nodeHeights(lowerNode))/(nodeHeights(upperNode)-nodeHeights(lowerNode));
     accPos(i,1) = accElement;
     accPos(i,2)= eta;
+    accPos(i,3)= i;
 end
 modelSettings.accElements = accPos;                 % Where are the accelerometers placed?
 
@@ -189,13 +193,16 @@ for i = 1:numEl
         eta = accPos(accNumber,2);
 
         alpha = eta*El.L;                                   % Distance along the element
-        phi = [1, alpha, alpha^2, alpha^3]*El.Ainv;         % Shape functions at location
-        Meacc = modelSettings.mAcc*(phi'*phi);              % Mass matrix due to accelerometer
-        Me = Me + Meacc;                                    % Add to elemental mass matrix! (might need to check)
+        for j = 1:length(alpha)                             % Possibly multiple accelerometers per element!
+            phi = [1, alpha(j), alpha(j)^2, alpha(j)^3]*El.Ainv;         % Shape functions at location
+            Meacc = modelSettings.mAcc*(phi'*phi);              % Mass matrix due to accelerometer
+            Me = Me + Meacc;                                    % Add to elemental mass matrix! (might need to check)
+        end
 
-        % Also tell the element it has an accelerometer
+        % Also tell the element it has (an) accelerometer(s)
         El.Acc = true;
         El.accEta = eta;
+        El.accNumber = accNumber;
     end
     
     % Apply boundary condition to first node
@@ -230,6 +237,7 @@ for i = 1:numEl
     elements(i) = El.assign(i,[n1,n2],initPos,Ke,Me);       % Write everything to the element
 end
 
+
 % Find mode shapes and natural frequencies
 if modelSettings.Nmodes <= numEl
         [Phi,omega2] = eig(K,M);
@@ -253,10 +261,11 @@ analyticalf1 = lambda^2/(2*pi*L^2)*sqrt(Beam.E*I/(Beam.rho*S));
 
 delta = 1*L^3/(3*Beam.E*I);
   
-if abs(f(1) - analyticalf1) > 0.001 && nPatches == 0 && modelSettings.dispInput == false && nAcc == 0 % Check only when there are no patches
+if abs(f(1) - analyticalf1) > 0.001 && nPatches == 0 && nAcc == 0 % Check only when there are no patches
     % Is only checked if there are no patches or accelerometers present!
     warning('Eigenfrequencies do not correspond')
 end
+
 
 %% Dynamical matrices setup %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 Phi = Phi/(Phi'*M*Phi);     % Normalise w.r.t. mass matrix
@@ -298,9 +307,22 @@ Phi = Phi/(Phi'*M*Phi);     % Normalise w.r.t. mass matrix
 
 % Bmatrices
     % External input B matrix (in d coordinates)
+        % Find interpolate nodes
+%         height = modelSettings.measurementHeight*L;
+%         pos = unique([elements.pos]');
+%         diff = pos-height;
+%         upperNode = find(round(diff,4)>=0,1);
+%         interpNodes = [upperNode-1,upperNode];  
+%         interpEl = upperNode-1;
+% 
+%         % local coordinate alpha
+%         alpha = height - pos(interpNodes(1));                       % alpha = eta*obj.L
+%         N = [1, alpha, alpha^2, alpha^3]*elements(interpEl).Ainv;
+%         
+%         Bext(interpNodes(1)*2-1:interpNodes(1)*2+2) = N;
         Bext = zeros(numNodes*2,1);
-        fNode = 3;                                      % force Node
-        Bext(end-1) = 1;                                % Force at last node in x direction 
+        fNode = numNodes;                                      % force Node
+        Bext(fNode*2-1) = 1;                                % Force at last node in x direction 
 
 % C matrices    
     % Measurement C matrix for laser measurement
@@ -327,9 +349,7 @@ Phi = Phi/(Phi'*M*Phi);     % Normalise w.r.t. mass matrix
             N = [1, alpha, alpha^2, alpha^3]*elements(interpEl).Ainv;
             Cacc(i,interpNodes(1)*2-1:interpNodes(1)*2+2) = N;
         end
-        
-
-
+       
 % Damping matrix 
     Cmodal = 2*Beam.zeta*sqrt(omega2);
 
@@ -345,6 +365,20 @@ D = [zeros(nPatches+1,size(B,2));                       % No throughput laser,ba
     Cacc*(Phi*Phi')*[Bext,Bg]];                  % Throughput for acceleration measurements!
 
 sys = ss(A,B,C,D);
+
+% Put the system together with other information in a larger model object. 
+SYS = model('Continuous time beam model'); % create model object called SYS!
+    SYS.elements = elements;
+    SYS.analyticalf1 = analyticalf1;
+    SYS.numEl = numEl;
+    SYS.numNodes = numNodes;
+    SYS.Phi = Phi;
+    SYS.omega2 = omega2;
+    SYS.plotSettings = plotSettings;
+    SYS.modelSettings = modelSettings;
+    SYS.simulationSettings = simulationSettings;
+    SYS.sys = sys;
+
 
 %{
 The total model looks like:
@@ -364,12 +398,19 @@ Inputs:                           Model:      Outputs:
                                               |acn|
 The amount of piezo actuators and sensors depends on the settings at the
 defined top of the file. Also the amount of accelerometers. The system is
-by default in modal space (TODO).  
+by default in modal space (TODO).
+
+SYS contains all necessary information for plotting and
+simulation. This way SYS can just be saved and used in other files or
+functions. 
 %}
    
 %% Discretisation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % To be able to simulate the system, it is discretised. 
-dsys = c2d(sys,simulationSettings.dt,'ZOH');            % Discrete normal system
+dsys = c2d(sys,simulationSettings.dt,'ZOH');            % Discretise using ZOH
+dSYS = SYS;                                             % Make new system
+dSYS.sys = dsys;
+dSYS.descr = 'Discrete time beam model';
 
 %% Time simulation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % This simulates the system and makes nice plots and stuff. It is not
@@ -435,16 +476,21 @@ if simulationSettings.simulate ==  true
         delete(f);
     end
 
-    if simulationSettings.plot == true
-        dfull = 0;
-       % plots = plotter(y,y_fb,dmat,sys,sys_fb,elements,analyticalf1,plotSettings,modelSettings,simulationSettings);
+    % Save simulation data in the model itself. 
+    dSYS.simulationData.qfull = qfull;
+    dSYS.simulationData.y = y;
+    dSYS.simulationData.t = t;
+    dSYS.simulationData.Udist = Udist;
+
+    % Make a nice plot of the simulation!
+    if plotSettings.plot == true
+       plots = plotter(dSYS);
     end
 end
 
 disp('Done!')
 
-% FUNCTIONS!!
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% FUNCTIONS!!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Get element lengths for adaptive mesh (Taking smart patches into account)
 function [Ls,sElements] = getLengths(modelSettings,sBeam)
@@ -549,7 +595,7 @@ Adds these signals together in an imput signal U!
 
     % Step input
     uStep = zeros(1,T/dt+1);
-    if simulationSettings.stepTime >= 0                                     % If step input is defined
+    if ~isempty(simulationSettings.stepTime)                                % If step input is defined
         startSample = ceil(simulationSettings.stepTime(1)/dt);
         uStep(startSample:end) = ones(1,T/dt-startSample+2)*simulationSettings.stepAmp;
         if length(simulationSettings.stepTime) > 1                          % If end time is defined
@@ -560,14 +606,14 @@ Adds these signals together in an imput signal U!
 
     % Inpulse input
     uImpulse = zeros(1,T/dt+1);
-    if simulationSettings.impulseTime >= 0
+    if ~isempty(simulationSettings.impulseTime)
         impulseSample = ceil(simulationSettings.impulseTime/dt);
         uImpulse(impulseSample) = simulationSettings.impulseAmp;
     end
 
     % harmonic input
     uHarmonic = zeros(1,T/dt+1);
-    if simulationSettings.harmonicTime >= 0
+    if ~isempty(simulationSettings.harmonicTime)
         startSample = ceil(simulationSettings.harmonicTime/dt);
         t = simulationSettings.harmonicTime-dt:dt:T;
         A = simulationSettings.harmonicAmp;
@@ -577,7 +623,7 @@ Adds these signals together in an imput signal U!
 
     % Random Input
     uRand = zeros(1,T/dt+1);
-    if simulationSettings.randTime >= 0
+    if ~isempty(simulationSettings.randTime)
         startSample = ceil(simulationSettings.randTime/dt);
         a = simulationSettings.randInt(1);
         b = simulationSettings.randInt(2);
