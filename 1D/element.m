@@ -27,6 +27,9 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
         pE = 0;
         pmu = 0;
         prho = 0;
+
+        % Accelerometer properties
+        accEta = 0;
         
         % Elemental matrices        
         Ke;                                 % Elemental stiffness matrix
