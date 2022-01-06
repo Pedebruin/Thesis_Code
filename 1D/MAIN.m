@@ -20,7 +20,7 @@ determined through patchL.
 
 The rest of the parameters are relatively self explanatory. If you have any
 questions or find an error (very probable) dont hesitate to send me a
-message!
+message! @ P.E.deBruin@student.tudelft.nl
 
 XXX Pim
 
@@ -35,11 +35,13 @@ close all
 set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',12);  
 
 disp('Setting up...')
+
 %% Parameters & Settings
 % Basic settings
-L = 370e-3;     % Total length
-b = 40e-3;      % Total width
-patchL = 50e-3; % patch length
+L = 370e-3;     % Beam length
+b = 40e-3;      % Beam width
+h = 1e-3;       % Beam thickness
+patchL = 50e-3; % Patch length
 
 % Model settings
 % Smart patches (Piezo)
@@ -62,14 +64,16 @@ modelSettings.L = L;
 modelSettings.b = b;
 
 % plotSettings
-plotSettings.plot = true;                         % Plot the simulation?
+plotSettings.plot = true;                           % Plot the simulation?
     plotSettings.plotNodes = true;                          % Plot the nodes
         plotSettings.nodeNumbers = false;                   % Plot the node numbers
     plotSettings.elementNumbers = true;                     % Plot the element numbers
     plotSettings.sensor = true;                             % Plot the sensor in beam plot (red line)
     plotSettings.Input = false;                              % Plot given force input in the sensor plot
     plotSettings.accelerometers = true;                     % Plot accelerometers?
-        plotSettings.accNumbers = true;            % Plot acceleromter numbers?
+        plotSettings.accNumbers = true;             % Plot acceleromter numbers?
+    
+    plotSettings.statePlot = true;                  % Plot the state evolutions
 
 % simulationSettings
 simulationSettings.simulate = true;                     % Simulate at all?
@@ -82,25 +86,29 @@ simulationSettings.waitBar = false;                      % Give waitbar and canc
     simulationSettings.distInput = 1;                   % Which input is the disturbance?
         simulationSettings.stepTime = [];          % Location of input step ([time], [time endtime], [] )
             simulationSettings.stepAmp = 1;             % Step amplitude
-        simulationSettings.impulseTime = [];           % Location of input impulse ([time], [])
+        simulationSettings.impulseTime = [];            % Location of input impulse ([time], [])
             simulationSettings.impulseAmp = 1;          % Inpulse amplitude
         simulationSettings.harmonicTime = [0.1];            % Harmonic input start time ([time], [])
             simulationSettings.harmonicFreq = 1;        % Frequency of sinusoidal input ([freq], [])
             simulationSettings.harmonicAmp = 1;         % Frequency input amplitude [Hz]
         simulationSettings.randTime = [];                % random input start time ([time], [])
             simulationSettings.randInt = [-1,1];        % random input interval (uniformly distributed)
+    
+    % Observer settings
+    simulationSettings.observer = ["LO"];               % ["LO" "AKF" "DKF" "GDF"]
+    simulationSettings.observer.offset_LO = 1e-4;       % Initial state offset
 
 
-% beam element parameters (for every beam element)
+% beam element parameters (This is a beam element)
 Beam = element('Beam');
-Beam.h = 1e-3;                      % m thickness of beam
+Beam.h = h;                         % m thickness of beam
 Beam.b = b;                         % m width of beam
 Beam.E = 70E9;                      % E modulus of beam
 Beam.mu = 0.334;                    % Poisson's ratio of beam
 Beam.rho = 2710;                    % Mass density of beam
 Beam.zeta = 0.01;                   % Modal damping coefficient of beam
 
-% Smart beam parameters :PI P-876 DuraAct (for every smart element)
+% Smart beam parameters :PI P-876 DuraAct (This is a 'smart' element)
 sBeam = copy(Beam); sBeam.name = 'sBeam';       
 sBeam.L = patchL/modelSettings.nsElementsP;     % Length of smart beam element
 sBeam.ph = 0.5e-3;                              % m 
@@ -407,7 +415,8 @@ functions.
    
 %% Discretisation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % To be able to simulate the system, it is discretised. 
-dsys = c2d(sys,simulationSettings.dt,'ZOH');            % Discretise using ZOH
+c2dMethod = 'ZOH';
+dsys = c2d(sys,simulationSettings.dt,c2dMethod);            % Discretise using ZOH
 dSYS = SYS;                                             % Make new system
 dSYS.sys = dsys;
 dSYS.descr = 'Discrete time beam model';
@@ -432,12 +441,6 @@ if simulationSettings.simulate ==  true
     % Distubrance input generation (function at the bottom)
     Udist = generateInput(simulationSettings);  % Disturbance input
 
-    % Some initialisations.
-    qfull = zeros(nq,length(t));        % Full state vector over time
-    y = zeros(ny,length(t));            % System output
-    U = zeros(nu,1);                    % Input vector
-    q0 = zeros(nq,1);     % Normal time simulation
-
     % Set up waitbar if necessary
     if simulationSettings.waitBar == true
         f = waitbar(0,'1','Name','Running simulation loop...',...
@@ -445,23 +448,68 @@ if simulationSettings.simulate ==  true
         setappdata(f,'canceling',0);
     end
 
-    % Simulation loop!!!! Here, the system is forward Eulered.
-    q1 = q0;    % Initialise at q0 (Looks weird, but is correct. (look at first line of loop)
+    % Determine observer gain
+    P = eig(dsys.A)*0.9;                   % Place poles in Discrete time (TODO)
+    L = place(dsys.A',dsys.C',P)';                
+  
+
+    % Some initialisations.
+    y = zeros(ny,length(t));            % System output
+    U = zeros(nu,1);                    % Input vector
+
+    qfull = zeros(nq,length(t));        % Full state vector over time
+    qfull_LO = zeros(nq,length(t));     % Also for the observers
+    qfull_AKF = zeros(nq,length(t));
+    qfull_DKF = zeros(nq,length(t));
+    qfull_GDF = zeros(nq,length(t));
+
+    q0 = zeros(nq,1);                   % Normal time simulation    
+    q0_LO = ones(nq,1)*simulationSettings.observer.offset_LO;                 % Initial state for Leuenberger Observer
+    q0_AKF = ones(nq,1);                % Initial sate for AKF
+    q0_DKF = ones(nq,1);                % Initial state for DKF
+    q0_GDF = ones(nq,1);                % Initial state for GDF
+
+    % Simulation loop!!!! Here, the system is forward Eulered. %%%%%%%%%%%%
+    q1 = q0;                % Initialise at q0 (Looks weird, but is correct. (look at first line of loop)
+    q1_LO = q0_LO;          % Also for the observers
+    q1_AKF = q0_AKF;
+    q1_DKF = q0_DKF;
+    q1_GDF = q0_GDF;
+
     for i = 1:T/dt+1
         % Shift one time step
-        q = q1; % Previous next state is the current state. (Yes, very deep indeed)
+        q = q1;             % Previous next state is the current state. (Yes, very deep indeed)
+        q_LO = q1_LO;       % Also for the observers
+        q_AKF = q1_AKF;
+        q_DKF = q1_DKF;
+        q_GDF = q1_GDF;
 
-        % Pick input
-        U(simulationSettings.distInput) = Udist(i);
+        % Simulate system
+            % Pick input
+            U(simulationSettings.distInput) = Udist(i);
+    
+            % Propagate discrete time dynamic system
+            q1 = dsys.A*q + dsys.B*U;           % Propagate dynamics
+            y(:,i) = dsys.C*q + dsys.D*U;       % Measurement equation
+    
+            % Also save full states for plotting (in q space, so modal)
+            qfull(:,i) = q;
 
-        % Propagate discrete time dynamic system
-        q1 = dsys.A*q + dsys.B*U;           % Propagate dynamics
-        y(:,i) = dsys.C*q + dsys.D*U;       % Measurement equation
-
-        % Also save full states for plotting (in q space, so modal)
-        qfull(:,i) = q;
-
-        % Run state estimation algorithms here somewhere
+        % Run state estimators
+            if any(ismember(simulationSettings.observer,'LO'))
+            % LO
+                q1_LO = dsys.A*q_LO + dsys.B*U + L*(y(:,i)-(dsys.C*q_LO+dsys.D*U));
+                qfull_LO(:,i) = q_LO;       % Save estimated state
+            end 
+            if any(ismember(simulationSettings.observer,'AKF'))
+            % AKF
+            end
+            if any(ismember(simulationSettings.observer,'DKF'))
+            % GDF
+            end
+            if any(ismember(simulationSettings.observer,'GDF'))
+            % DKF
+            end
 
         % Update waitbar and check cancel button
         if simulationSettings.waitBar == true
@@ -481,6 +529,11 @@ if simulationSettings.simulate ==  true
     dSYS.simulationData.y = y;
     dSYS.simulationData.t = t;
     dSYS.simulationData.Udist = Udist;
+
+    dSYS.simulationData.qfull_LO = qfull_LO;
+    dSYS.simulationData.qfull_AKF = qfull_AKF;
+    dSYS.simulationData.qfull_DKF = qfull_DKF;
+    dSYS.simulationData.qfull_GDF = qfull_GDF;
 
     % Make a nice plot of the simulation!
     if plotSettings.plot == true

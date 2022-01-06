@@ -31,7 +31,7 @@ dfull = [Phi, zeros(numNodes*2,Nmodes);         % full states in d space
         zeros(numNodes*2,Nmodes),Phi]*qfull;
 
 % Setting up figure
-figure()
+figure('Name','Simulation results')
 subplot(12,3,(0:8)*3+1) % Beam plot
     hold on
     grid on
@@ -85,8 +85,9 @@ bodeplot(bodeAx,sys(1,1),plotoptions);
 xline(bodeAx,model.analyticalf1)
 
 %% Beam plot!
+%%%------------------------------------------------------------------------
 simPlots = [];     
-i = 1;  % For now only plot initial orientation
+i = 1;  % For now only plot initial orientation possibility to animate still there. 
 
 % update elements
 for j = 1:length(elements)
@@ -108,6 +109,7 @@ timeText = text(beamAx, 0,L*1.1,['T= ',num2str(round(t(i),1)),'/',num2str(t(end)
                                             'HorizontalAlignment','center');
 simPlots = [simPlots, timeText];
 
+%%%------------------------------------------------------------------------
 % Plot laser
 if plotSettings.sensor == true
     laserx = y(1,i);
@@ -136,4 +138,73 @@ if nAcc > 0                         % If there are accelerometers
 end
 
 drawnow;
+
+if plotSettings.statePlot == true
+    Nmodes = Nmodes; % If you only want to plot the first Nmodes modes. 
+    if any(ismember(simulationSettings.observer,'LO'))
+        qfull_LO = model.simulationData.qfull_LO;
+        figure('Name','LO')
+        sgtitle('Leuenberger Observer')
+        
+        for i = 1:Nmodes
+            subplot(Nmodes,1,i)
+            hold on
+            grid on
+            ylabel(['$\eta$',num2str(i)])  
+            xlim([0,simulationSettings.T]);
+
+            plot(gca,t,qfull(i,:));
+            plot(gca,t,qfull_LO(i,:));
+        end
+    end 
+
+    if any(ismember(simulationSettings.observer,'AKF'))
+        qfull_AKF = model.simulationData.qfull_AKF;
+        figure('Name','AKF')
+        sgtitle('Augmented Kalman Filter')
+        for i = 1:Nmodes
+            subplot(Nmodes,1,i)
+            hold on
+            grid on
+            ylabel(['$\eta$',num2str(i)])  
+            xlim([0,simulationSettings.T]);
+    
+            plot(gca,t,qfull(i,:));
+            plot(gca,t,qfull_AKF(i,:));
+        end
+    end
+    if any(ismember(simulationSettings.observer,'DKF'))
+        qfull_DKF = model.simulationData.qfull_DKF;
+        figure('Name','DKF')
+        sgtitle('Dual Kalman Filter')
+        for i = 1:Nmodes
+            subplot(Nmodes,1,i)
+            hold on
+            grid on
+            ylabel(['$\eta$',num2str(i)])  
+            xlim([0,simulationSettings.T]);
+    
+            plot(gca,t,qfull(i,:));
+            plot(gca,t,qfull_DKF(i,:));
+        end
+
+    end
+    if any(ismember(simulationSettings.observer,'GDF'))
+        qfull_GDF = model.simulationData.qfull_GDF;
+        figure('Name','GDF')
+        sgtitle('Giljins, de Moor Filter')
+        for i = 1:Nmodes
+            subplot(Nmodes,1,i)
+            hold on
+            grid on
+            ylabel(['$\eta$',num2str(i)])  
+            xlim([0,simulationSettings.T]);
+    
+            plot(gca,t,qfull(i,:));
+            plot(gca,t,qfull_GDF(i,:));
+        end
+    end
+    drawnow;
+
+end
 end
