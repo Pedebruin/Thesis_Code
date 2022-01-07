@@ -24,6 +24,12 @@ qfull =     model.simulationData.qfull;             % full states in q space
 y =         model.simulationData.y;
 Udist =     model.simulationData.Udist;
 
+y_LO = model.simulationData.y_LO;
+y_KF = model.simulationData.y_KF;
+y_AKF = model.simulationData.y_AKF;
+y_DKF = model.simulationData.y_DKF;
+y_GMF = model.simulationData.y_GMF;
+
 nPatches = length(modelSettings.sElements)/modelSettings.nsElementsP;
 nAcc = length(modelSettings.Acc);
 t = 0:simulationSettings.dt:simulationSettings.T;
@@ -49,6 +55,7 @@ subplot(12,3,[2,3,5,6])
     title 'Laser Measurement'
     measurementAx = gca;
     xlim([0,simulationSettings.T]);
+    ylim(1.1*[min(y(1,:)),max(y(1,:))])  
 subplot(12,3,[11,12,14,15]);
     hold on
     grid on
@@ -112,17 +119,34 @@ simPlots = [simPlots, timeText];
 %%%------------------------------------------------------------------------
 % Plot laser
 if plotSettings.sensor == true
-    laserx = y(1,i);
+    laserx = model.sys.C(1,:)*qfull(:,i);
     laser = plot(beamAx,[beamAx.XLim(1) laserx],[1,1]*modelSettings.measurementHeight*L,'r','lineWidth',2);
     simPlots = [simPlots, laser];
 end
 
 %% Laser plot
 plot(measurementAx,t,y(1,:),'color',[0.3010 0.7450 0.9330]); % Sensor
+if any(ismember(simulationSettings.observer,'LO'))
+    plot(measurementAx,t,y_LO(1,:),'color',[0.8500 0.3250 0.0980]);
+end
+if any(ismember(simulationSettings.observer,'KF'))
+    plot(measurementAx,t,y_KF(1,:),'color',[0.9290 0.6940 0.1250]);
+end
+if any(ismember(simulationSettings.observer,'AKF'))
+    plot(measurementAx,t,y_AKF(1,:),'color',[0.4940 0.1840 0.5560]);
+end
+if any(ismember(simulationSettings.observer,'DKF'))
+    plot(measurementAx,t,y_DKF(1,:),'color',[0.3010 0.7450 0.9330]);
+end
+if any(ismember(simulationSettings.observer,'GDF'))
+    plot(measurementAx,t,y_GMF(1,:),'color',[0.6350 0.0780 0.1840]);
+end
 
 if plotSettings.Input == true
     plot(measurementAx,t,Udist,'r'); % Sensor
 end
+
+legend(measurementAx,['True' simulationSettings.observer])
 
 %% Piezo plot
 if nPatches > 0                    % If there are patches
@@ -140,71 +164,69 @@ end
 drawnow;
 
 if plotSettings.statePlot == true
-    Nmodes = Nmodes; % If you only want to plot the first Nmodes modes. 
+    Nmodes = plotSettings.states; % If you only want to plot the first Nmodes modes. 
+    axes = gobjects(Nmodes);
+    
+    figure('Name','Observer and true states')
+    sgtitle('Modal states')
+    hold on
+    for i = 1:Nmodes
+        subplot(Nmodes,1,i)
+        hold on
+        grid on
+        ylabel(['$\eta$',num2str(i)])  
+        xlim([0,simulationSettings.T]);
+        ylim(1.1*[min(qfull(i,:)),max(qfull(i,:))])        
+        axes(i) = gca;
+        plot(gca,t,qfull(i,:));             % Plot true states
+    end
+
+
+
+    % Plot Luenberger observer
     if any(ismember(simulationSettings.observer,'LO'))
         qfull_LO = model.simulationData.qfull_LO;
-        figure('Name','LO')
-        sgtitle('Leuenberger Observer')
-        
         for i = 1:Nmodes
-            subplot(Nmodes,1,i)
-            hold on
-            grid on
-            ylabel(['$\eta$',num2str(i)])  
-            xlim([0,simulationSettings.T]);
-
-            plot(gca,t,qfull(i,:));
-            plot(gca,t,qfull_LO(i,:));
+            plot(axes(i),t,qfull_LO(i,:),'color',[0.8500 0.3250 0.0980]);
         end
     end 
+    
+    % Plot conventional Kalman Filter
+    if any(ismember(simulationSettings.observer,'KF'))
+        qfull_KF = model.simulationData.qfull_KF;
+        for i = 1:Nmodes
+            plot(axes(i),t,qfull_KF(i,:),'color',[0.9290 0.6940 0.1250]);
+        end
+    end
 
+    % Plot Augmented Kalman Filter
     if any(ismember(simulationSettings.observer,'AKF'))
         qfull_AKF = model.simulationData.qfull_AKF;
-        figure('Name','AKF')
-        sgtitle('Augmented Kalman Filter')
         for i = 1:Nmodes
-            subplot(Nmodes,1,i)
-            hold on
-            grid on
-            ylabel(['$\eta$',num2str(i)])  
-            xlim([0,simulationSettings.T]);
-    
-            plot(gca,t,qfull(i,:));
-            plot(gca,t,qfull_AKF(i,:));
+            plot(axes(i),t,qfull_AKF(i,:),'color',[0.4940 0.1840 0.5560]);
         end
     end
+
+    % Plot Dual Kalman Filter
     if any(ismember(simulationSettings.observer,'DKF'))
         qfull_DKF = model.simulationData.qfull_DKF;
-        figure('Name','DKF')
-        sgtitle('Dual Kalman Filter')
         for i = 1:Nmodes
-            subplot(Nmodes,1,i)
-            hold on
-            grid on
-            ylabel(['$\eta$',num2str(i)])  
-            xlim([0,simulationSettings.T]);
-    
-            plot(gca,t,qfull(i,:));
-            plot(gca,t,qfull_DKF(i,:));
+            plot(axes(i),t,qfull_DKF(i,:),'color',[0.3010 0.7450 0.9330]);
         end
 
     end
+
+    % Plot Giljins de Moor Filter
     if any(ismember(simulationSettings.observer,'GDF'))
         qfull_GDF = model.simulationData.qfull_GDF;
-        figure('Name','GDF')
-        sgtitle('Giljins, de Moor Filter')
         for i = 1:Nmodes
-            subplot(Nmodes,1,i)
-            hold on
-            grid on
-            ylabel(['$\eta$',num2str(i)])  
-            xlim([0,simulationSettings.T]);
-    
-            plot(gca,t,qfull(i,:));
-            plot(gca,t,qfull_GDF(i,:));
+            plot(gca,t,qfull_GDF(i,:),'color',[0.6350 0.0780 0.1840]);
         end
     end
+    
+%     items = ["True" simulationSettings.observer]
+    
+    legend(axes(1),['True' simulationSettings.observer])
     drawnow;
-
 end
 end

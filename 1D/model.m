@@ -22,6 +22,11 @@ classdef model
 
         simulationData;         % Data from a simulation
 
+        Q;                      % Process covariance matrix
+        R;                      % Measurement covariance matrix
+        Bw;                     % Process noise influence matrix
+        Dv;                     % Measurement noise influence matrix
+
         sys;                    % Actual state space system!
     end
     

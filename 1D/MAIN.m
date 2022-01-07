@@ -16,7 +16,8 @@ and piezo parameters are found around line 260 and 200 respectively.
 The patches can be placed through modelSettings.patches. This is a vector
 with the bottom location of each patch in natural coordinates. the length
 of this vector determines the amount of patches. The size of the patches is 
-determined through patchL. 
+determined through patchL. Same goes for the accelerometers and
+modelSettings.Acc. 
 
 The rest of the parameters are relatively self explanatory. If you have any
 questions or find an error (very probable) dont hesitate to send me a
@@ -28,13 +29,16 @@ This script requires:
     Symbolic math toolbox 
     Control system toolbox (For feedback command)
     Robust Control toolbox (For Hinf command)
+    Statistics and machine learning toolbox (mvnrnd command)
 %}
 
 clear
 close all
 set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',12);  
 
-disp('Setting up...')
+now = char(datetime('now'));
+fprintf([now,'-----------------------------\n'...
+    'Setting up...\n'])
 
 %% Parameters & Settings
 % Basic settings
@@ -45,25 +49,55 @@ patchL = 50e-3; % Patch length
 
 % Model settings
 % Smart patches (Piezo)
-modelSettings.patches = [0,0.5];                             % location of start of patches (y/L)
-modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
-modelSettings.LbElements = 0.1;                         % Preferred length of beam elements (y/L) (will change slightly)
+    modelSettings.patches = [0];                             % location of start of patches (y/L)
+    modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
+    modelSettings.LbElements = 0.1;                         % Preferred length of beam elements (y/L) (will change slightly)
+    modelSettings.patchCov = 1e-6;                          % True covariance of patch measurement
 
 % Accelerometers
-modelSettings.Acc = [0.45,0.85];                            % Location of accelerometers
-modelSettings.mAcc = 0.01;                              % Mass of accelerometers
+    modelSettings.Acc = [0.45,1,0.1];                        % Location of accelerometers
+    modelSettings.mAcc = 0.01;                              % Mass of accelerometers
+    modelSettings.accCov = 1e-3;                             % True covariance of accelerometer measurement
 
 % Strain patches (TODO)
 
 % Modelling 
-modelSettings.Nmodes = 10;                               % Number of modes to be modelled (Can't be larger then the amount of nodes)
-modelSettings.measurementHeight = 1;                 % Height of the measurement
-modelSettings.forceHeight = 0.5;                    % Height of the input force. 
+    modelSettings.Nmodes = 10;                              % Number of modes to be modelled (Can't be larger then the amount of nodes)
+    modelSettings.measurementHeight = 1;                    % Height of the measurement
+    modelSettings.forceHeight = 0.5;                        % Height of the input force.
+    
+    modelSettings.wcov = 0;                              % Process noise covariance
+    modelSettings.laserCov = 1e-4;                          % Laser covariance                                          
+    
+    modelSettings.L = L;                                    
+    modelSettings.b = b;
 
-modelSettings.L = L;                                    
-modelSettings.b = b;
+% simulationSettings (Settings for the simulation)
+simulationSettings.simulate = true;                     % Simulate at all?
+    simulationSettings.waitBar = false;                      % Give waitbar and cancel (VERY SLOW)
+    simulationSettings.noise = true;                        % Turn on or off all noise!
 
-% plotSettings
+    % Time settings (Settings for the time and stepsize of the simulation)
+    simulationSettings.dt = 1e-3;                       % Sampling time
+    simulationSettings.T = 2;                           % Total simulation time
+    
+    % Input settings (Settings for the input that is used)
+    simulationSettings.distInput = 1;                   % Which input is the disturbance?
+        simulationSettings.stepTime = [0.1,1.1];               % Location of input step ([time], [time endtime], [] )
+            simulationSettings.stepAmp = 1;             % Step amplitude
+        simulationSettings.impulseTime = [];            % Location of input impulse ([time], [])
+            simulationSettings.impulseAmp = 1;          % Inpulse amplitude
+        simulationSettings.harmonicTime = [];           % Harmonic input start time ([time], [])
+            simulationSettings.harmonicFreq = 1;        % Frequency of sinusoidal input ([freq], [])
+            simulationSettings.harmonicAmp = 1;         % Frequency input amplitude [Hz]
+        simulationSettings.randTime = [];               % random input start time ([time], [])
+            simulationSettings.randInt = [-1,1];        % random input interval (uniformly distributed)
+    
+    % Observer settings (Settings for the observers) 
+    simulationSettings.observer = ["LO" "KF"];               % ["LO" "KF" "AKF" "DKF" "GDF"]
+    simulationSettings.obsOffset = 1e-3;          % Initial state offset
+
+% plotSettings (Governs how the results are plotted!)
 plotSettings.plot = true;                           % Plot the simulation?
     plotSettings.plotNodes = true;                          % Plot the nodes
         plotSettings.nodeNumbers = false;                   % Plot the node numbers
@@ -74,30 +108,7 @@ plotSettings.plot = true;                           % Plot the simulation?
         plotSettings.accNumbers = true;             % Plot acceleromter numbers?
     
     plotSettings.statePlot = true;                  % Plot the state evolutions
-
-% simulationSettings
-simulationSettings.simulate = true;                     % Simulate at all?
-simulationSettings.waitBar = false;                      % Give waitbar and cancel (takes longer, but good in debugging)
-    % Time settings
-    simulationSettings.dt = 1e-3;                       % Sampling time
-    simulationSettings.T = 2;                           % Total simulation time
-    
-    % Input settings
-    simulationSettings.distInput = 1;                   % Which input is the disturbance?
-        simulationSettings.stepTime = [];          % Location of input step ([time], [time endtime], [] )
-            simulationSettings.stepAmp = 1;             % Step amplitude
-        simulationSettings.impulseTime = [];            % Location of input impulse ([time], [])
-            simulationSettings.impulseAmp = 1;          % Inpulse amplitude
-        simulationSettings.harmonicTime = [0.1];            % Harmonic input start time ([time], [])
-            simulationSettings.harmonicFreq = 1;        % Frequency of sinusoidal input ([freq], [])
-            simulationSettings.harmonicAmp = 1;         % Frequency input amplitude [Hz]
-        simulationSettings.randTime = [];                % random input start time ([time], [])
-            simulationSettings.randInt = [-1,1];        % random input interval (uniformly distributed)
-    
-    % Observer settings
-    simulationSettings.observer = ["LO"];               % ["LO" "AKF" "DKF" "GDF"]
-    simulationSettings.observer.offset_LO = 1e-4;       % Initial state offset
-
+        plotSettings.states = 3;                     % First .. states to be plotted
 
 % beam element parameters (This is a beam element)
 Beam = element('Beam');
@@ -274,7 +285,6 @@ if abs(f(1) - analyticalf1) > 0.001 && nPatches == 0 && nAcc == 0 % Check only w
     warning('Eigenfrequencies do not correspond')
 end
 
-
 %% Dynamical matrices setup %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 Phi = Phi/(Phi'*M*Phi);     % Normalise w.r.t. mass matrix
 
@@ -349,6 +359,7 @@ Phi = Phi/(Phi'*M*Phi);     % Normalise w.r.t. mass matrix
         Cmeasurement(interpNodes(1)*2-1:interpNodes(1)*2+2) = N;    % Construct C from this (cubic interpolation)
     
     % Acceleration measurement C matrix
+        % Accelerometer C matrix
         Cacc = zeros(nAcc,numNodes*2);
         for i = 1:nAcc
             interpEl = accPos(i,1);
@@ -374,6 +385,17 @@ D = [zeros(nPatches+1,size(B,2));                       % No throughput laser,ba
 
 sys = ss(A,B,C,D);
 
+% Define true process and measurement noise covariances
+Q = eye(Nmodes*2)*modelSettings.wcov;
+R = [modelSettings.laserCov,zeros(1,nPatches+nAcc);
+    zeros(nPatches,1), eye(nPatches)*modelSettings.patchCov, zeros(nPatches,nAcc);            % Allow for different covariances for different sensors!
+    zeros(nAcc,1), zeros(nAcc,nPatches), eye(nAcc)*modelSettings.accCov]; 
+S = zeros(Nmodes*2,1+nPatches+nAcc);
+
+% Noise influence matrices Bw and Dv
+Bw = eye(Nmodes*2);
+Dv = eye(1+nPatches+nAcc);
+
 % Put the system together with other information in a larger model object. 
 SYS = model('Continuous time beam model'); % create model object called SYS!
     SYS.elements = elements;
@@ -385,8 +407,17 @@ SYS = model('Continuous time beam model'); % create model object called SYS!
     SYS.plotSettings = plotSettings;
     SYS.modelSettings = modelSettings;
     SYS.simulationSettings = simulationSettings;
+    SYS.Q = Q;
+    SYS.R = R;
+    SYS.Bw = Bw;
+    SYS.Dv = Dv;
     SYS.sys = sys;
 
+% Give summary of model
+fprintf(['    Number of patches: %d \n'...
+         '    Number of accelerometers: %d \n'...
+         '    Number of elements: %d \n'...
+         '    Number of modes: %d \n'],nPatches,nAcc,numEl,Nmodes)
 
 %{
 The total model looks like:
@@ -412,7 +443,7 @@ SYS contains all necessary information for plotting and
 simulation. This way SYS can just be saved and used in other files or
 functions. 
 %}
-   
+
 %% Discretisation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % To be able to simulate the system, it is discretised. 
 c2dMethod = 'ZOH';
@@ -427,16 +458,22 @@ dSYS.descr = 'Discrete time beam model';
 % debugging the code. 
 
 if simulationSettings.simulate ==  true
-    disp('Simulating...')
+    fprintf(['Simulating...\n'...
+            '    Noise: ', num2str(simulationSettings.noise),'\n'...
+            '    Offset: %.4f\n'],simulationSettings.obsOffset);
 
-    % Handy defenitions
+    % Snip off laser measurement for observers (As they can't use this)
+    dsys_sim = dsys;                        % Simulated model!
+    dsys_obs = dsys(2:end,1:end);           % Model used for observers!
+
+    % Handy defenitions & Unpacking
     T = simulationSettings.T;
     dt = simulationSettings.dt;
     t = 0:dt:T;
 
-    ny = size(dsys,1);                  % Number of outputs
-    nu = size(dsys,2);                  % Number of inputs
-    nq = size(dsys.A,1);                % Number of states
+    ny = size(dsys_sim,1);                  % Number of outputs
+    nu = size(dsys_sim,2);                  % Number of inputs
+    nq = size(dsys_sim.A,1);                % Number of states
 
     % Distubrance input generation (function at the bottom)
     Udist = generateInput(simulationSettings);  % Disturbance input
@@ -448,38 +485,67 @@ if simulationSettings.simulate ==  true
         setappdata(f,'canceling',0);
     end
 
-    % Determine observer gain
-    P = eig(dsys.A)*0.9;                   % Place poles in Discrete time (TODO)
-    L = place(dsys.A',dsys.C',P)';                
+    % LO setup
+    poles = eig(dsys_obs.A)*(1-5e-3);                   % Place poles in Discrete time (TODO)
+    L = place(dsys_obs.A',dsys_obs.C',poles)';                
   
+    % KF setup
+    KF.Q = Q + eye(size(Q));
+    KF.R = R(2:end,2:end)*1.5;                          % Snip off laser measurement
+    KF.S = S(:,2:end);
+    KF.Bw = Bw;
+    KF.Dv = Dv(2:end,2:end); 
+
+        % Find kalman gain by solving discrete algebraic ricatti equation
+        % (p.162 M.Verhaegen)
+    [~,Kt,KF.poles] = idare(dsys_obs.A, dsys_obs.C', KF.Q, KF.R, KF.S, []);
+    KF.K = Kt';
+    % AKF setup
+    % DKF setup
+    % GDF setup
 
     % Some initialisations.
     y = zeros(ny,length(t));            % System output
+    y_LO = zeros(ny,length(t));
+    y_KF = zeros(ny,length(t));
+    y_AKF = zeros(ny,length(t));
+    y_DKF = zeros(ny,length(t));
+    y_GMF = zeros(ny,length(t));
+
     U = zeros(nu,1);                    % Input vector
 
     qfull = zeros(nq,length(t));        % Full state vector over time
     qfull_LO = zeros(nq,length(t));     % Also for the observers
+    qfull_KF = zeros(nq,length(t));
     qfull_AKF = zeros(nq,length(t));
     qfull_DKF = zeros(nq,length(t));
     qfull_GDF = zeros(nq,length(t));
 
-    q0 = zeros(nq,1);                   % Normal time simulation    
-    q0_LO = ones(nq,1)*simulationSettings.observer.offset_LO;                 % Initial state for Leuenberger Observer
-    q0_AKF = ones(nq,1);                % Initial sate for AKF
-    q0_DKF = ones(nq,1);                % Initial state for DKF
-    q0_GDF = ones(nq,1);                % Initial state for GDF
+    q0 = zeros(nq,1);                                       % Normal time simulation    
+    q0_LO = ones(nq,1)*simulationSettings.obsOffset;        % Initial state estimate for LO
+    q0_KF = ones(nq,1)*simulationSettings.obsOffset;        % Initial state estimate for KF
+    q0_AKF = ones(nq,1)*simulationSettings.obsOffset;       % Initial sate estimate for AKF
+    q0_DKF = ones(nq,1)*simulationSettings.obsOffset;       % Initial state estimate for DKF
+    q0_GDF = ones(nq,1)*simulationSettings.obsOffset;       % Initial state estimate for GDF
 
-    % Simulation loop!!!! Here, the system is forward Eulered. %%%%%%%%%%%%
     q1 = q0;                % Initialise at q0 (Looks weird, but is correct. (look at first line of loop)
     q1_LO = q0_LO;          % Also for the observers
+    q1_KF = q0_KF;
     q1_AKF = q0_AKF;
     q1_DKF = q0_DKF;
     q1_GDF = q0_GDF;
 
+    fprintf(['    T: %.2f s \n'...
+            '    dt: %.4f s\n'...
+            '    Time steps: %d \n'],simulationSettings.T, simulationSettings.dt, length(t))
+   
+    % Simulation loop!!!! Here, the system is propagated.%%%%%%%%%%%%%%%%%%
+    startTime = tic;
     for i = 1:T/dt+1
         % Shift one time step
         q = q1;             % Previous next state is the current state. (Yes, very deep indeed)
         q_LO = q1_LO;       % Also for the observers
+        q_KF = q1_KF;
         q_AKF = q1_AKF;
         q_DKF = q1_DKF;
         q_GDF = q1_GDF;
@@ -487,20 +553,39 @@ if simulationSettings.simulate ==  true
         % Simulate system
             % Pick input
             U(simulationSettings.distInput) = Udist(i);
+
+            % Generate noise
+            if simulationSettings.noise == true
+                w = mvnrnd(zeros(nq,1),Q)';                         % mvnrnd to allow for different covariances of different sensors
+                v = mvnrnd(zeros(ny,1),R)';
+            else
+                w = zeros(nq,1);
+                v = zeros(ny,1);
+            end
     
             % Propagate discrete time dynamic system
-            q1 = dsys.A*q + dsys.B*U;           % Propagate dynamics
-            y(:,i) = dsys.C*q + dsys.D*U;       % Measurement equation
-    
+            q1 = dsys_sim.A*q + dsys_sim.B*U + Bw*w;           % Propagate dynamics
+            y(:,i) = dsys_sim.C*q + dsys_sim.D*U + Dv*v;       % Measurement equation
+
             % Also save full states for plotting (in q space, so modal)
             qfull(:,i) = q;
 
         % Run state estimators
             if any(ismember(simulationSettings.observer,'LO'))
             % LO
-                q1_LO = dsys.A*q_LO + dsys.B*U + L*(y(:,i)-(dsys.C*q_LO+dsys.D*U));
+                q1_LO = dsys_obs.A*q_LO + dsys_obs.B*U + L*(y(2:end,i)-dsys_obs.C*q_LO-dsys_obs.D*U);
+                y_LO(:,i) = dsys.C*q_LO + dsys.D*U; % Estimated output
                 qfull_LO(:,i) = q_LO;       % Save estimated state
             end 
+            
+            if any(ismember(simulationSettings.observer,'KF'))
+            % KF
+                % Steady state kalman filter (Same as LO, but with kalman gain)
+                q1_KF = dsys_obs.A*q_KF + dsys_obs.B*U + KF.K*(y(2:end,i)-dsys_obs.C*q_KF-dsys_obs.D*U);
+                y_KF(:,i) = dsys.C*q_KF + dsys.D*U;
+                qfull_KF(:,i) = q_KF;       % Save estimated state
+            end
+
             if any(ismember(simulationSettings.observer,'AKF'))
             % AKF
             end
@@ -519,21 +604,30 @@ if simulationSettings.simulate ==  true
             end
         end
     end
+    elapsed = toc(startTime);
+    fprintf('    Simulation time: %.2f s \n',elapsed)
 
     if simulationSettings.waitBar == true
         delete(f);
     end
 
-    % Save simulation data in the model itself. 
-    dSYS.simulationData.qfull = qfull;
-    dSYS.simulationData.y = y;
+    % Save simulation data in the larger model struct. 
     dSYS.simulationData.t = t;
     dSYS.simulationData.Udist = Udist;
-
+    
+    dSYS.simulationData.qfull = qfull;
     dSYS.simulationData.qfull_LO = qfull_LO;
+    dSYS.simulationData.qfull_KF = qfull_KF;
     dSYS.simulationData.qfull_AKF = qfull_AKF;
     dSYS.simulationData.qfull_DKF = qfull_DKF;
     dSYS.simulationData.qfull_GDF = qfull_GDF;
+
+    dSYS.simulationData.y = y;
+    dSYS.simulationData.y_LO = y_LO;
+    dSYS.simulationData.y_KF = y_KF;
+    dSYS.simulationData.y_AKF = y_AKF;
+    dSYS.simulationData.y_DKF = y_DKF;
+    dSYS.simulationData.y_GMF = y_GMF;
 
     % Make a nice plot of the simulation!
     if plotSettings.plot == true
@@ -632,7 +726,7 @@ function [intS,intG] = shapeFunctions()
     intG = int(n1,0,L);
 end
 
-% Input generation
+% Input generation for impulse, step, harmonic and random signals
 function [U] = generateInput(simulationSettings)
 %{
 Generates generic input sequences based on simulationSettings. 
