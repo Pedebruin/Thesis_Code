@@ -37,7 +37,7 @@ dfull = [Phi, zeros(numNodes*2,Nmodes);         % full states in d space
         zeros(numNodes*2,Nmodes),Phi]*qfull;
 
 % Setting up figure
-figure('Name','Simulation results')
+a = figure('Name','Simulation results');
 subplot(12,3,(0:8)*3+1) % Beam plot
     hold on
     grid on
@@ -73,6 +73,8 @@ subplot(12,3,[20,21,23,24])
     xlim([0,simulationSettings.T]);
 subplot(12,3,28:36)
     bodeAx = gca;
+
+movegui(a,'northwest')
     
 % Plot bode
 plotoptions = bodeoptions;
@@ -142,10 +144,6 @@ if any(ismember(simulationSettings.observer,'GDF'))
     plot(measurementAx,t,y_GMF(1,:),'color',[0.6350 0.0780 0.1840]);
 end
 
-if plotSettings.Input == true
-    plot(measurementAx,t,Udist,'r'); % Sensor
-end
-
 legend(measurementAx,['True' simulationSettings.observer])
 
 %% Piezo plot
@@ -163,11 +161,12 @@ end
 
 drawnow;
 
+%% State plot
 if plotSettings.statePlot == true
     Nmodes = plotSettings.states; % If you only want to plot the first Nmodes modes. 
     axes = gobjects(Nmodes);
     
-    figure('Name','Observer and true states')
+    b = figure('Name','Observer and true states');
     sgtitle('Modal states')
     hold on
     for i = 1:Nmodes
@@ -179,6 +178,8 @@ if plotSettings.statePlot == true
         ylim(1.1*[min(qfull(i,:)),max(qfull(i,:))])        
         axes(i) = gca;
         plot(gca,t,qfull(i,:));             % Plot true states
+
+        movegui(b,'north')
     end
 
 
@@ -227,6 +228,25 @@ if plotSettings.statePlot == true
 %     items = ["True" simulationSettings.observer]
     
     legend(axes(1),['True' simulationSettings.observer])
+
+    %% Input plot
+    if plotSettings.Input == true
+        c = figure('Name' ,'System input sequence');
+        hold on
+        grid on
+        ylabel 'force Input [N]'
+        title 'System input sequence'
+        inputAx = gca;
+        xlim([0,simulationSettings.T]);
+        plot(inputAx,t,Udist,'r'); % Sensor
+
+        movegui(c,'northeast')
+    end
+
+    
+
+
+
     drawnow;
 end
 end

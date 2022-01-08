@@ -39,6 +39,7 @@ set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',12);
 now = char(datetime('now'));
 fprintf([now,'-----------------------------\n'...
     'Setting up...\n'])
+startScript= tic;
 
 %% Parameters & Settings
 % Basic settings
@@ -47,7 +48,7 @@ b = 40e-3;      % Beam width
 h = 1e-3;       % Beam thickness
 patchL = 50e-3; % Patch length
 
-% Model settings
+% Model settings%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Smart patches (Piezo)
     modelSettings.patches = [0];                             % location of start of patches (y/L)
     modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
@@ -72,7 +73,7 @@ patchL = 50e-3; % Patch length
     modelSettings.L = L;                                    
     modelSettings.b = b;
 
-% simulationSettings (Settings for the simulation)
+% simulationSettings (Settings for the simulation)%%%%%%%%%%%%%%%%%%%%%%%%%
 simulationSettings.simulate = true;                     % Simulate at all?
     simulationSettings.waitBar = false;                      % Give waitbar and cancel (VERY SLOW)
     simulationSettings.noise = true;                        % Turn on or off all noise!
@@ -87,7 +88,7 @@ simulationSettings.simulate = true;                     % Simulate at all?
             simulationSettings.stepAmp = 1;             % Step amplitude
         simulationSettings.impulseTime = [];            % Location of input impulse ([time], [])
             simulationSettings.impulseAmp = 1;          % Inpulse amplitude
-        simulationSettings.harmonicTime = [];           % Harmonic input start time ([time], [])
+        simulationSettings.harmonicTime = [0];           % Harmonic input start time ([time], [])
             simulationSettings.harmonicFreq = 1;        % Frequency of sinusoidal input ([freq], [])
             simulationSettings.harmonicAmp = 1;         % Frequency input amplitude [Hz]
         simulationSettings.randTime = [];               % random input start time ([time], [])
@@ -97,13 +98,13 @@ simulationSettings.simulate = true;                     % Simulate at all?
     simulationSettings.observer = ["LO" "KF"];               % ["LO" "KF" "AKF" "DKF" "GDF"]
     simulationSettings.obsOffset = 1e-3;          % Initial state offset
 
-% plotSettings (Governs how the results are plotted!)
+% plotSettings (Governs how the results are plotted!)%%%%%%%%%%%%%%%%%%%%%%
 plotSettings.plot = true;                           % Plot the simulation?
     plotSettings.plotNodes = true;                          % Plot the nodes
         plotSettings.nodeNumbers = false;                   % Plot the node numbers
     plotSettings.elementNumbers = true;                     % Plot the element numbers
     plotSettings.sensor = true;                             % Plot the sensor in beam plot (red line)
-    plotSettings.Input = false;                              % Plot given force input in the sensor plot
+    plotSettings.Input = true;                              % Plot given force input in the sensor plot
     plotSettings.accelerometers = true;                     % Plot accelerometers?
         plotSettings.accNumbers = true;             % Plot acceleromter numbers?
     
@@ -487,7 +488,7 @@ if simulationSettings.simulate ==  true
 
     % LO setup
     poles = eig(dsys_obs.A)*(1-5e-3);                   % Place poles in Discrete time (TODO)
-    L = place(dsys_obs.A',dsys_obs.C',poles)';                
+    LO.L = place(dsys_obs.A',dsys_obs.C',poles)';                
   
     % KF setup
     KF.Q = Q + eye(size(Q));
@@ -573,7 +574,7 @@ if simulationSettings.simulate ==  true
         % Run state estimators
             if any(ismember(simulationSettings.observer,'LO'))
             % LO
-                q1_LO = dsys_obs.A*q_LO + dsys_obs.B*U + L*(y(2:end,i)-dsys_obs.C*q_LO-dsys_obs.D*U);
+                q1_LO = dsys_obs.A*q_LO + dsys_obs.B*U + LO.L*(y(2:end,i)-dsys_obs.C*q_LO-dsys_obs.D*U);
                 y_LO(:,i) = dsys.C*q_LO + dsys.D*U; % Estimated output
                 qfull_LO(:,i) = q_LO;       % Save estimated state
             end 
@@ -635,7 +636,8 @@ if simulationSettings.simulate ==  true
     end
 end
 
-disp('Done!')
+scriptElapsed = toc(startScript);
+fprintf('DONE in %2.2f Seconds! \n',scriptElapsed)
 
 %% FUNCTIONS!!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -743,7 +745,12 @@ Adds these signals together in an imput signal U!
     % Step input
     uStep = zeros(1,T/dt+1);
     if ~isempty(simulationSettings.stepTime)                                % If step input is defined
-        startSample = ceil(simulationSettings.stepTime(1)/dt);
+        if simulationSettings.stepTime(1) == 0
+            startSample = 1;
+        else
+            startSample = ceil(simulationSettings.stepTime(1)/dt);
+        end
+
         uStep(startSample:end) = ones(1,T/dt-startSample+2)*simulationSettings.stepAmp;
         if length(simulationSettings.stepTime) > 1                          % If end time is defined
             stopSample = floor(simulationSettings.stepTime(2)/dt);
@@ -754,15 +761,25 @@ Adds these signals together in an imput signal U!
     % Inpulse input
     uImpulse = zeros(1,T/dt+1);
     if ~isempty(simulationSettings.impulseTime)
-        impulseSample = ceil(simulationSettings.impulseTime/dt);
+        if simulationSettings.impulseTime == 0
+            impulseSample = 1;
+        else
+            impulseSample = ceil(simulationSettings.impulseTime/dt);
+        end
         uImpulse(impulseSample) = simulationSettings.impulseAmp;
     end
 
     % harmonic input
     uHarmonic = zeros(1,T/dt+1);
     if ~isempty(simulationSettings.harmonicTime)
-        startSample = ceil(simulationSettings.harmonicTime/dt);
-        t = simulationSettings.harmonicTime-dt:dt:T;
+        if simulationSettings.harmonicTime == 0
+            startSample = 1;
+            t = 0:dt:T;
+        else
+            startSample = ceil(simulationSettings.harmonicTime/dt);
+            t = simulationSettings.harmonicTime-dt:dt:T;
+        end
+        
         A = simulationSettings.harmonicAmp;
         f = simulationSettings.harmonicFreq;
         uHarmonic(startSample:end) = A*sin(2*pi*t/f);
@@ -771,7 +788,11 @@ Adds these signals together in an imput signal U!
     % Random Input
     uRand = zeros(1,T/dt+1);
     if ~isempty(simulationSettings.randTime)
-        startSample = ceil(simulationSettings.randTime/dt);
+        if simulationSettings.harmonicTime == 0
+            startSample = 1;
+        else
+            startSample = ceil(simulationSettings.randTime/dt);
+        end
         a = simulationSettings.randInt(1);
         b = simulationSettings.randInt(2);
         uRand(startSample:end) = a + (b-a).*rand([1,T/dt-startSample+2]);
