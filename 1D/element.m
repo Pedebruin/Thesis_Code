@@ -122,7 +122,7 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
            else
                color = [0 0.4470 0.7410];
            end
-          bplot = plot(ax,x,y,'Color',color);
+          bplot = plot(ax,x,y,'Color',color,'LineWidth',2);
            p = bplot;
 
            % Plot nodes

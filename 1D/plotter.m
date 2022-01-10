@@ -152,12 +152,18 @@ if nPatches > 0                    % If there are patches
     plot(piezoAx,t,piezoOutputs);
 end
 
+piezoAx.ColorOrder = [1 0 0; 0 1 0; 0 0 1; 0 0 0];
+piezoAx.LineStyleOrder = {'-','--'};
+
 %% Accelerometer plot
 if nAcc > 0                         % If there are accelerometers
     ts = ones(nAcc,1)*t;
     accOutputs = y(nPatches+2:end,:);
     plot(accAx,ts',accOutputs');
 end
+
+accAx.ColorOrder = [1 0 0; 0 1 0; 0 0 1; 0 0 0];
+accAx.LineStyleOrder = {'-','--'};
 
 drawnow;
 
@@ -244,7 +250,7 @@ if plotSettings.statePlot == true
 
         % Plot Augmented Kalman Filter
         if any(ismember(simulationSettings.observer,'AKF'))
-            plot(inputAx,t,qfull_AKF(end,:),'color',[0.4940 0.1840 0.5560]);
+            plot(inputAx,t,qfull_AKF(Nmodes*2+1,:),'color',[0.4940 0.1840 0.5560]);
         end
         
         LOLocation = ismember(simulationSettings.observer,"LO");
