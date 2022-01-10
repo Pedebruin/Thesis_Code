@@ -50,25 +50,25 @@ patchL = 50e-3; % Patch length
 
 % Model settings%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Smart patches (Piezo)
-    modelSettings.patches = [0];                             % location of start of patches (y/L)
+    modelSettings.patches = [];                             % location of start of patches (y/L)
     modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
     modelSettings.LbElements = 0.1;                         % Preferred length of beam elements (y/L) (will change slightly)
     modelSettings.patchCov = 1e-6;                          % True covariance of patch measurement
 
 % Accelerometers
-    modelSettings.Acc = [0.45,1,0.1];                        % Location of accelerometers
+    modelSettings.Acc = [1,0.75,0.5];                        % Location of accelerometers
     modelSettings.mAcc = 0.01;                              % Mass of accelerometers
-    modelSettings.accCov = 1e-3;                             % True covariance of accelerometer measurement
+    modelSettings.accCov = 10;                             % True covariance of accelerometer measurement
 
 % Strain patches (TODO)
 
 % Modelling 
-    modelSettings.Nmodes = 10;                              % Number of modes to be modelled (Can't be larger then the amount of nodes)
+    modelSettings.Nmodes = 5;                              % Number of modes to be modelled (Can't be larger then the amount of nodes)
     modelSettings.measurementHeight = 1;                    % Height of the measurement
     modelSettings.forceHeight = 0.5;                        % Height of the input force.
     
     modelSettings.wcov = 0;                              % Process noise covariance
-    modelSettings.laserCov = 1e-4;                          % Laser covariance                                          
+    modelSettings.laserCov = 0;                          % Laser covariance                                          
     
     modelSettings.L = L;                                    
     modelSettings.b = b;
@@ -95,8 +95,10 @@ simulationSettings.simulate = true;                     % Simulate at all?
             simulationSettings.randInt = [-1,1];        % random input interval (uniformly distributed)
     
     % Observer settings (Settings for the observers) 
-    simulationSettings.observer = ["LO" "KF"];               % ["LO" "KF" "AKF" "DKF" "GDF"]
-    simulationSettings.obsOffset = 1e-3;          % Initial state offset
+    simulationSettings.observer = ["LO" "KF" "AKF"];    % ["LO" "KF" "AKF" "DKF" "GDF"]
+    simulationSettings.obsOffset = 1e-3;                % Initial state offset
+    simulationSettings.stationaryKF = false;	        % Use stationary KF? 
+    simulationSettings.stationaryAKF = true;            % Use stationary AKF?
 
 % plotSettings (Governs how the results are plotted!)%%%%%%%%%%%%%%%%%%%%%%
 plotSettings.plot = true;                           % Plot the simulation?
@@ -109,7 +111,7 @@ plotSettings.plot = true;                           % Plot the simulation?
         plotSettings.accNumbers = true;             % Plot acceleromter numbers?
     
     plotSettings.statePlot = true;                  % Plot the state evolutions
-        plotSettings.states = 3;                     % First .. states to be plotted
+        plotSettings.states = 5;                     % First # states to be plotted
 
 % beam element parameters (This is a beam element)
 Beam = element('Beam');
@@ -415,10 +417,10 @@ SYS = model('Continuous time beam model'); % create model object called SYS!
     SYS.sys = sys;
 
 % Give summary of model
-fprintf(['    Number of patches: %d \n'...
-         '    Number of accelerometers: %d \n'...
-         '    Number of elements: %d \n'...
-         '    Number of modes: %d \n'],nPatches,nAcc,numEl,Nmodes)
+fprintf(['    # patches: %d \n'...
+         '    # accelerometers: %d \n'...
+         '    # elements: %d \n'...
+         '    # modes: %d \n'],nPatches,nAcc,numEl,Nmodes)
 
 %{
 The total model looks like:
@@ -491,43 +493,87 @@ if simulationSettings.simulate ==  true
     LO.L = place(dsys_obs.A',dsys_obs.C',poles)';                
   
     % KF setup
-    KF.Q = Q + eye(size(Q));
-    KF.R = R(2:end,2:end)*1.5;                          % Snip off laser measurement
+    KF.Q = Q;
+    KF.R = R(2:end,2:end);                          % Snip off laser measurement
     KF.S = S(:,2:end);
     KF.Bw = Bw;
     KF.Dv = Dv(2:end,2:end); 
+    
+    if simulationSettings.stationaryKF == true
+        % Find stationary kalman gain by solving discrete algebraic ricatti equation
+        % (p.162 M.Verhaegen
+        [~,Kt,KF.poles] = idare(dsys_obs.A, dsys_obs.C', KF.Q, KF.R, KF.S, []);
+        KF.K = Kt';
+    else
+        KF.Q = KF.Q*0;          % Do you trust your model?                             
+        KF.R = KF.R*1e3;        % Do you trust your measurements?
+    end
 
-        % Find kalman gain by solving discrete algebraic ricatti equation
-        % (p.162 M.Verhaegen)
-    [~,Kt,KF.poles] = idare(dsys_obs.A, dsys_obs.C', KF.Q, KF.R, KF.S, []);
-    KF.K = Kt';
     % AKF setup
+    %q = [q;qd;u] ->nq+nu
+    AKF.Q = Q;
+    AKF.R = R(2:end,2:end);
+    AKF.S = [S(:,2:end); zeros(nu,ny-1)];
+    AKF.Bw = Bw;
+    AKF.Dv = Dv(2:end,2:end);
+    AKF.A = [dsys_obs.A, dsys_obs.B;
+            zeros(nu,nq),eye(nu,nu)]; 
+    AKF.C = [dsys_obs.C, dsys_obs.D];
+    
+
+    if simulationSettings.stationaryAKF == true
+        KF.Q = KF.Q*0;          % Do you trust your model?                             
+        KF.R = KF.R*1e3;        % Do you trust your measurements?
+        AKF.Qu = eye(nu)*1e-6;       % Input covariance!!
+
+        AKF.Q = [AKF.Q,zeros(nq,nu);
+        zeros(nu,nq),AKF.Qu];
+
+        % Find stationary kalman gain by solving discrete algebraic ricatti equation
+        % (p.162 M.Verhaegen
+        [~,Kt,AKF.poles] = idare(AKF.A, AKF.C', AKF.Q, AKF.R, AKF.S, []);
+        AKF.K = Kt';
+
+        AKF.Qu = eye(nu);       % Input covariance!!
+    else
+        KF.Q = KF.Q*0;          % Do you trust your model?                             
+        KF.R = KF.R*1e3;        % Do you trust your measurements?
+        AKF.Qu = eye(nu);       % Input covariance!!
+
+        AKF.Q = [AKF.Q,zeros(nq,nu);
+        zeros(nu,nq),AKF.Qu];
+    end
+
+
     % DKF setup
     % GDF setup
 
     % Some initialisations.
     y = zeros(ny,length(t));            % System output
-    y_LO = zeros(ny,length(t));
+    y_LO = zeros(ny,length(t)); 
     y_KF = zeros(ny,length(t));
     y_AKF = zeros(ny,length(t));
     y_DKF = zeros(ny,length(t));
     y_GMF = zeros(ny,length(t));
 
-    U = zeros(nu,1);                    % Input vector
+    U = zeros(nu,1);                                        % Input vector
 
-    qfull = zeros(nq,length(t));        % Full state vector over time
-    qfull_LO = zeros(nq,length(t));     % Also for the observers
+    qfull = zeros(nq,length(t));                            % Full state vector over time
+    qfull_LO = zeros(nq,length(t));                         % Also for the observers
     qfull_KF = zeros(nq,length(t));
-    qfull_AKF = zeros(nq,length(t));
+    qfull_AKF = zeros(nq+nu,length(t));                     % Augmented state for AKF
     qfull_DKF = zeros(nq,length(t));
     qfull_GDF = zeros(nq,length(t));
 
     q0 = zeros(nq,1);                                       % Normal time simulation    
     q0_LO = ones(nq,1)*simulationSettings.obsOffset;        % Initial state estimate for LO
     q0_KF = ones(nq,1)*simulationSettings.obsOffset;        % Initial state estimate for KF
-    q0_AKF = ones(nq,1)*simulationSettings.obsOffset;       % Initial sate estimate for AKF
+    q0_AKF = ones(nq+nu,1)*simulationSettings.obsOffset;    % Initial sate estimate for AKF
     q0_DKF = ones(nq,1)*simulationSettings.obsOffset;       % Initial state estimate for DKF
     q0_GDF = ones(nq,1)*simulationSettings.obsOffset;       % Initial state estimate for GDF
+
+    P0_KF = zeros(nq);                                        % Initial P matrix kalman filter
+    P0_AKF = zeros(nq+nu);
 
     q1 = q0;                % Initialise at q0 (Looks weird, but is correct. (look at first line of loop)
     q1_LO = q0_LO;          % Also for the observers
@@ -535,6 +581,12 @@ if simulationSettings.simulate ==  true
     q1_AKF = q0_AKF;
     q1_DKF = q0_DKF;
     q1_GDF = q0_GDF;
+
+    P1_KF = P0_KF;
+    P1_AKF = P1_KF;
+
+    W = mvnrnd(zeros(nq,1),Q,T/dt+1)';
+    V = mvnrnd(zeros(ny,1),R,T/dt+1)';
 
     fprintf(['    T: %.2f s \n'...
             '    dt: %.4f s\n'...
@@ -551,14 +603,17 @@ if simulationSettings.simulate ==  true
         q_DKF = q1_DKF;
         q_GDF = q1_GDF;
 
+        P_KF = P1_KF;
+        P_AKF = P1_AKF;
+
         % Simulate system
             % Pick input
             U(simulationSettings.distInput) = Udist(i);
 
             % Generate noise
             if simulationSettings.noise == true
-                w = mvnrnd(zeros(nq,1),Q)';                         % mvnrnd to allow for different covariances of different sensors
-                v = mvnrnd(zeros(ny,1),R)';
+                w = W(:,i);                         % mvnrnd to allow for different covariances of different sensors
+                v = V(:,i);
             else
                 w = zeros(nq,1);
                 v = zeros(ny,1);
@@ -572,23 +627,52 @@ if simulationSettings.simulate ==  true
             qfull(:,i) = q;
 
         % Run state estimators
+            % LO ----------------------------------------------------------
             if any(ismember(simulationSettings.observer,'LO'))
-            % LO
                 q1_LO = dsys_obs.A*q_LO + dsys_obs.B*U + LO.L*(y(2:end,i)-dsys_obs.C*q_LO-dsys_obs.D*U);
                 y_LO(:,i) = dsys.C*q_LO + dsys.D*U; % Estimated output
                 qfull_LO(:,i) = q_LO;       % Save estimated state
             end 
-            
+
+            % KF ----------------------------------------------------------           
             if any(ismember(simulationSettings.observer,'KF'))
-            % KF
-                % Steady state kalman filter (Same as LO, but with kalman gain)
-                q1_KF = dsys_obs.A*q_KF + dsys_obs.B*U + KF.K*(y(2:end,i)-dsys_obs.C*q_KF-dsys_obs.D*U);
-                y_KF(:,i) = dsys.C*q_KF + dsys.D*U;
-                qfull_KF(:,i) = q_KF;       % Save estimated state
+                if simulationSettings.stationaryKF == true
+                    % Steady state kalman filter (Same as LO, but with kalman gain)
+                    q1_KF = dsys_obs.A*q_KF + dsys_obs.B*U + KF.K*(y(2:end,i)-dsys_obs.C*q_KF-dsys_obs.D*U);
+
+                    % Save state and output
+                    qfull_KF(:,i) = q_KF;                    
+                    y_KF(:,i) = dsys.C*q_KF + dsys.D*U;
+
+                else
+                    % Measurement update
+                    q_KF = q_KF + P_KF*dsys_obs.C'/(dsys_obs.C*P_KF*dsys_obs.C'+KF.R)*(y(2:end,i)-dsys_obs.C*q_KF-dsys_obs.D*U);
+                    P_KF = P_KF - P_KF*dsys_obs.C'/(dsys_obs.C*P_KF*dsys_obs.C'+KF.R)*dsys_obs.C*P_KF;
+
+                    % Time update
+                    q1_KF = dsys_obs.A*q_KF + dsys_obs.B*U;
+                    P1_KF = dsys_obs.A*P_KF*dsys_obs.A'+KF.Bw*KF.Q*KF.Bw';
+
+                    % Save state and output
+                    qfull_KF(:,i) = q_KF;                    
+                    y_KF(:,i) = dsys.C*q_KF + dsys.D*U;
+
+                end
             end
 
+            % AKF----------------------------------------------------------
             if any(ismember(simulationSettings.observer,'AKF'))
-            % AKF
+                if simulationSettings.stationaryAKF == true
+                    % Steady state kalman filter (Same as LO, but with kalman gain)
+                    q1_AKF = AKF.A*q_AKF + AKF.K*(y(2:end,i)-AKF.C*q_AKF);
+
+                    % Save state and output
+                    qfull_AKF(:,i) = q_AKF;                    
+                    y_AKF(:,i) = [dsys.C(1,:),zeros(1,nu);
+                                    AKF.C]*q_AKF;                   
+                else
+                end
+                
             end
             if any(ismember(simulationSettings.observer,'DKF'))
             % GDF

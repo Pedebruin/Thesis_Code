@@ -238,14 +238,20 @@ if plotSettings.statePlot == true
         title 'System input sequence'
         inputAx = gca;
         xlim([0,simulationSettings.T]);
-        plot(inputAx,t,Udist,'r'); % Sensor
+        plot(inputAx,t,Udist); % Sensor
 
-        movegui(c,'northeast')
+        movegui(c,'northeast');
+
+        % Plot Augmented Kalman Filter
+        if any(ismember(simulationSettings.observer,'AKF'))
+            plot(inputAx,t,qfull_AKF(end,:),'color',[0.4940 0.1840 0.5560]);
+        end
+        
+        LOLocation = ismember(simulationSettings.observer,"LO");
+        KFLocation = ismember(simulationSettings.observer,"KF");
+        theRest = ~(LOLocation+KFLocation);
+        legend(inputAx,['True' simulationSettings.observer(theRest)])
     end
-
-    
-
-
 
     drawnow;
 end
