@@ -24,6 +24,7 @@ classdef model
 
         Q;                      % Process covariance matrix
         R;                      % Measurement covariance matrix
+        S;                      % Measurement and process cross covariance
         Bw;                     % Process noise influence matrix
         Dv;                     % Measurement noise influence matrix
 

@@ -21,14 +21,16 @@ modelSettings =         model.modelSettings;
 plotSettings =          model.plotSettings;
 
 qfull =     model.simulationData.qfull;             % full states in q space
-y =         model.simulationData.y;
+y =         model.simulationData.yfull;
 Udist =     model.simulationData.Udist;
 
-y_LO = model.simulationData.y_LO;
-y_KF = model.simulationData.y_KF;
-y_AKF = model.simulationData.y_AKF;
-y_DKF = model.simulationData.y_DKF;
-y_GMF = model.simulationData.y_GMF;
+y_LO = model.simulationData.yfull_LO;
+y_KF = model.simulationData.yfull_KF;
+y_AKF = model.simulationData.yfull_AKF;
+y_DKF = model.simulationData.yfull_DKF;
+y_GMF = model.simulationData.yfull_GMF;
+
+u_DKF = model.simulationData.ufull_DKF;
 
 nPatches = length(modelSettings.sElements)/modelSettings.nsElementsP;
 nAcc = length(modelSettings.Acc);
@@ -127,7 +129,7 @@ if plotSettings.sensor == true
 end
 
 %% Laser plot
-plot(measurementAx,t,y(1,:),'color',[0.3010 0.7450 0.9330]); % Sensor
+plot(measurementAx,t,y(1,:),'k'); % Sensor
 if any(ismember(simulationSettings.observer,'LO'))
     plot(measurementAx,t,y_LO(1,:),'color',[0.8500 0.3250 0.0980]);
 end
@@ -183,7 +185,7 @@ if plotSettings.statePlot == true
         xlim([0,simulationSettings.T]);
         ylim(1.1*[min(qfull(i,:)),max(qfull(i,:))])        
         axes(i) = gca;
-        plot(gca,t,qfull(i,:));             % Plot true states
+        plot(gca,t,qfull(i,:),'k');             % Plot true states
 
         movegui(b,'north')
     end
@@ -230,9 +232,6 @@ if plotSettings.statePlot == true
             plot(gca,t,qfull_GDF(i,:),'color',[0.6350 0.0780 0.1840]);
         end
     end
-    
-%     items = ["True" simulationSettings.observer]
-    
     legend(axes(1),['True' simulationSettings.observer])
 
     %% Input plot
@@ -244,7 +243,7 @@ if plotSettings.statePlot == true
         title 'System input sequence'
         inputAx = gca;
         xlim([0,simulationSettings.T]);
-        plot(inputAx,t,Udist); % Sensor
+        plot(inputAx,t,Udist,'k'); 
 
         movegui(c,'northeast');
 
@@ -253,12 +252,19 @@ if plotSettings.statePlot == true
             plot(inputAx,t,qfull_AKF(Nmodes*2+1,:),'color',[0.4940 0.1840 0.5560]);
         end
         
+        % Plot Dual Kalman Filter
+        if any(ismember(simulationSettings.observer,'DKF'))
+            plot(inputAx,t,u_DKF(1,:),'color',[0.3010 0.7450 0.9330]);
+        end
+        
         LOLocation = ismember(simulationSettings.observer,"LO");
         KFLocation = ismember(simulationSettings.observer,"KF");
-        theRest = ~(LOLocation+KFLocation);
+        AKFLocation = ismember(simulationSettings.observer,"AKF");
+        DKFLocation = ismember(simulationSettings.observer,"DKF");
+        GDFLocation = ismember(simulationSettings.observer,"GDF");
+        theRest = ~(LOLocation+KFLocation+AKFLocation+DKFLocation+GDFLocation);
         legend(inputAx,['True' simulationSettings.observer(theRest)])
     end
-
     drawnow;
 end
 end
