@@ -50,7 +50,7 @@ patchL = 50e-3; % Patch length
 
 % Model settings%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Smart patches (Piezo)
-    modelSettings.patches = [0];                             % location of start of patches (y/L)
+    modelSettings.patches = [];                             % location of start of patches (y/L)
     modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
     modelSettings.LbElements = 0.1;                         % Preferred length of beam elements (y/L) (will change slightly)
     modelSettings.patchCov = 1e-6;                          % True covariance of patch measurement
@@ -64,7 +64,7 @@ patchL = 50e-3; % Patch length
 
 % Modelling 
     modelSettings.Nmodes = 5;                              % Number of modes to be modelled (Can't be larger then the amount of nodes)
-    modelSettings.measurementHeight = 1;                    % Height of the measurement
+    modelSettings.measurementHeight = 0.85;                    % Height of the measurement
     modelSettings.forceHeight = 0.5;                        % Height of the input force.
     
     modelSettings.wcov = 0;                              % Process noise covariance
@@ -73,10 +73,15 @@ patchL = 50e-3; % Patch length
     modelSettings.L = L;                                    
     modelSettings.b = b;
 
+    modelSettings.rhoError = 1.05;                      % []% density error
+    modelSettings.mAccError = 1.05;                     % []% accelerometer mass error
+    modelSettings.AccError = 1e-3;                      % accelerometer position error
+
 % simulationSettings (Settings for the simulation)%%%%%%%%%%%%%%%%%%%%%%%%%
 simulationSettings.simulate = true;                     % Simulate at all?
     simulationSettings.waitBar = false;                      % Give waitbar and cancel option (VERY SLOW)
     simulationSettings.noise = true;                        % Turn on or off all noise!
+    simulationSettings.modelError = true;               % Turn on or off al model errors!
 
     % Time settings (Settings for the time and stepsize of the simulation)
     simulationSettings.dt = 1e-3;                       % Sampling time
@@ -95,7 +100,7 @@ simulationSettings.simulate = true;                     % Simulate at all?
             simulationSettings.randInt = [-1,1];        % random input interval (uniformly distributed)
     
     % Observer settings (Settings for the observers) 
-    simulationSettings.observer = ["LO" "KF" "AKF" "DKF"];    % ["LO" "KF" "AKF" "DKF" "GDF"]
+    simulationSettings.observer = ["LO" "KF" "AKF" "DKF" "GDF"];    % ["LO" "KF" "AKF" "DKF" "GDF"]
         simulationSettings.obsOffset = 1e-5;                % Initial state offset (we know its undeformed at the beginning, so probably 0); 
         
         % LO settings
@@ -103,7 +108,7 @@ simulationSettings.simulate = true;                     % Simulate at all?
 
         % KF settings
         KF.stationary = false;	                        % Use stationary KF? 
-        KF.QTune = 1;
+        KF.QTune = 1e6;
         KF.RTune = 1;
 
         % AKF settings
@@ -122,10 +127,14 @@ simulationSettings.simulate = true;                     % Simulate at all?
         %}
 
         % DKF settings
-        DKF.derivativeOrder = 1;
+        DKF.derivativeOrder = 0;                        % Does not work yet (TODO)
         DKF.QTune = 1;
         DKF.QuTune = 1e-3;
         DKF.RTune = 1;
+
+        % GDF settings
+        GDF.QTune = 1;
+        GDF.RTune = 1;
 
 % plotSettings (Governs how the results are plotted!)%%%%%%%%%%%%%%%%%%%%%%
 plotSettings.plot = true;                           % Plot the simulation?
@@ -160,327 +169,33 @@ sBeam.prho = 7800;
 
 % strain element parameters (TODO)
 
-%% Matrix setup %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Build beam model %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 nPatches = length(modelSettings.patches);           % Number of patches
 nsElementsP = modelSettings.nsElementsP;            % Number of elements per patch
 nAcc = length(modelSettings.Acc);                   % Number of accelerometers
 
-% Get element lengths! (Function at the bottom)
-[Ls,sElements] = getLengths(modelSettings,sBeam);   % Vector with for every element its length, and which elements are smart
-modelSettings.sElements = find(sElements);          % Which elements are smart?
+% True model for simulation
+SYS_sim = model('True beam model'); % create model object
+[SYS_sim, dSYS_sim, modelSettings] = buildBeam(modelSettings,simulationSettings,plotSettings,Beam,sBeam,SYS_sim); % Fill model object 
 
-% Find accelerometer locations
-accHeights = L*modelSettings.Acc;
-nodeHeights = [0,cumsum(Ls)];
-accPos = zeros(nAcc,2);         % accelerometer positions [Element, eta]
-
-for i = 1:nAcc
-    accHeight = accHeights(i);
-    diff = nodeHeights-accHeight;
-    upperNode = find(round(diff,4)>=0,1);           % below this node
-    lowerNode = upperNode-1;                        % Above this node
-    accElement = lowerNode;                         % This element!
-
-    % Natural element coordinate (How far along this element, for integration)
-    eta = (accHeight-nodeHeights(lowerNode))/(nodeHeights(upperNode)-nodeHeights(lowerNode));
-    accPos(i,1) = accElement;
-    accPos(i,2)= eta;
-    accPos(i,3)= i;
-end
-modelSettings.accElements = accPos;                 % Where are the accelerometers placed?
-
-% Assembly
-numEl = length(Ls); modelSettings.numEl = numEl;
-numNodes = numEl+1; modelSettings.numNodes = numEl+1;
-Nmodes = modelSettings.Nmodes;
-
-K = zeros(numNodes*2);                      
-M = zeros(numNodes*2);
-elements = element.empty(numEl,0);          % Empty element array going to store all elements. 
-
-% Loops over all elements, constructs their elemental K and M matrices and
-% stores them in element objects aswell (class defenition in element.m).
-% Also constructs the system K and M matrices by putting elemental matrices
-% in there. 
-for i = 1:numEl
-    % Elemental coordinates: qe = [v1,theta1,v2,theta2]';
-    n1 = i;     % Starting node
-    n2 = i+1;   % Ending node
-  
-    if sum(ismember(modelSettings.sElements,i)) > 0 % Is smart element?
-        El = copy(sBeam);                           % Inherit all smart element parameters
-        El.sBeam = true;                            % Tell it its a smart element
-    else                                            % Or normal beam element?
-        El = copy(Beam);                            % Inherit regular beam element parameters
-    end
-    
-        El.L = Ls(i);   % Give element correct length
-        El.ainv();      % Calculate Ainv for interpolation (speed)
-        El.number = i;  % Give element correct element number
-        
-        % Calculate stiffness (for normal beam ph & pb will be zero, so no additional terms). 
-        Ib = El.b*El.h^3/12;                        % Beam only
-        Ip = El.pb*El.ph^3/12 + El.pb*El.ph*(El.ph+El.h)^2/4; % Patch only
-        
-        EI = El.E*Ib+2*El.pE*Ip;                     % Equivalent EI and Rho*A (for normal element, extra term is 0)
-        rhoA = El.b*(El.rho*El.h+2*El.prho*El.ph);
-
-        % Elemental K and M matrices
-        Ke = EI/El.L^3*    [12, 6*El.L, -12, 6*El.L;
-                            6*El.L, 4*El.L^2, -6*El.L, 2*El.L^2;
-                            -12, -6*El.L, 12, -6*El.L;
-                            6*El.L, 2*El.L^2, -6*El.L, 4*El.L^2];
-
-        Me = rhoA*El.L/420* [156, 22*El.L, 54, -13*El.L;
-                            22*El.L, 4*El.L^2, 13*El.L, -3*El.L^2;
-                            54, 13*El.L, 156, -22*El.L;
-                            -13*El.L, -3*El.L^2, -22*El.L, 4*El.L^2];   
-
-    % Add point masses for accelerometers
-    if ismember(El.number,accPos(:,1))              % Does this element carry an accelerometer?
-        accNumber = find(accPos(:,1) == El.number); % Number of current accelerometer
-        eta = accPos(accNumber,2);
-
-        alpha = eta*El.L;                                   % Distance along the element
-        for j = 1:length(alpha)                             % Possibly multiple accelerometers per element!
-            phi = [1, alpha(j), alpha(j)^2, alpha(j)^3]*El.Ainv;         % Shape functions at location
-            Meacc = modelSettings.mAcc*(phi'*phi);              % Mass matrix due to accelerometer
-            Me = Me + Meacc;                                    % Add to elemental mass matrix! (might need to check)
-        end
-
-        % Also tell the element it has (an) accelerometer(s)
-        El.Acc = true;
-        El.accEta = eta;
-        El.accNumber = accNumber;
-    end
-    
-    % Apply boundary condition to first node
-    if n1 == 1                                      % If the node we are looking at is the first one
-        % Prescribe 0 to displacement and rotation
-        Ke(1:2,:) = zeros(2,4);                   
-        Ke(:,1:2) = zeros(4,2);
-        Ke(1:2,1:2) = eye(2);                   % Fix both rotation and displacement
-        
-        % Prescribe 0 to acceleration aswell
-        Me(1:2,:) = zeros(2,4);
-        Me(:,1:2) = zeros(4,2);
-        Me(1:2,1:2) = eye(2);
-    end
-
-    % Assembly. Since everything is nicely connected in sequence (1to2to3..) , the
-    % elemenental matrices stay nicely together in a diagonal fasion.
-    K(n1*2-1:n2*2,n1*2-1:n2*2) = K(n1*2-1:n2*2,n1*2-1:n2*2) + Ke;   % K
-    M(n1*2-1:n2*2,n1*2-1:n2*2) = M(n1*2-1:n2*2,n1*2-1:n2*2) + Me;   % M
-    
-    % Put information in element objects aswell (mainly for plotting, also for structuring)
-    x1 = 0;                 % x position first node of element
-    x2 = 0;                 % x position second node of element
-    y1 = sum(Ls(1:i-1));    % y position first node of element
-    y2 = sum(Ls(1:i));      % y position second node of element
-    t1 = 0;                 % theta of first node of element
-    t2 = 0;                 % theta of second node of element
-    initPos = [x1, x2;
-                y1, y2;
-                t1, t2];
-    
-    elements(i) = El.assign(i,[n1,n2],initPos,Ke,Me);       % Write everything to the element
-end
-
-% Find mode shapes and natural frequencies
-if modelSettings.Nmodes <= numEl
-        [Phi,omega2] = eig(K,M);
-else
-    error('Number of elements is smaller then the number of modes requested. Modal decomposition will not work!')
-end
-
-Phi = Phi(:,1:Nmodes+2);                % Select only Nmodes+2 modes
-omega2 = omega2(1:Nmodes+2,1:Nmodes+2); % Select only Nmodes+2 natural frequencies
-
-%Snip off weird modes 
-Phi = Phi(:,3:end);                     % First 2 modes are not correct, so snip them off
-omega2 = omega2(3:end,3:end);           % Same for natural frequencies
-
-% Check first natural frequency
-f = diag(sqrt(omega2)/(2*pi));
-I = (Beam.h^3)/12;
-S = Beam.h;         
-lambda = 1.87510407;
-analyticalf1 = lambda^2/(2*pi*L^2)*sqrt(Beam.E*I/(Beam.rho*S));
-
-delta = 1*L^3/(3*Beam.E*I);
-  
-if abs(f(1) - analyticalf1) > 0.001 && nPatches == 0 && nAcc == 0 % Check only when there are no patches
-    % Is only checked if there are no patches or accelerometers present!
-    warning('Eigenfrequencies do not correspond')
-end
-
-%% Dynamical matrices setup %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-Phi = Phi/(Phi'*M*Phi);     % Normalise w.r.t. mass matrix
-
-% Piezo in & outputs
-    % Sensor equation according to K. Aktas
-    [intS,~] = shapeFunctions();
-    H = 1e6;                                        % Arbitrary gain (needs setup validation)
-    z = sBeam.h/2+sBeam.ph;                         % Effective height
-    d31 = -180e-12;                                 % Piezo coupling d
-    s11 = 16.1e-12;
-    e31 = d31/s11;                                  % Piezo coupling e
-    w = sBeam.pb;                                   % width of beam
-    S = H*z*e31*w*intS;                       % Need to check this again (derivation)!
-    
-    % Actuator equation according to K. Aktas
-    [~,intG] = shapeFunctions();
-    Ep = sBeam.pE;
-    d31 =  -180e-12;
-    w = sBeam.pb;
-    zbar = (sBeam.ph+sBeam.h)/2;
-    %intG = [0,-1,0,1];
-    G = Ep*d31*w*zbar*intG';                  % While we're at it, check this derivation aswell!
-    
-    % Voltage input B matrix (in d coordinates) and output matrix C for the
-    % piezo patches!
-    nsElements = length(modelSettings.sElements);
-    Bg = zeros(numNodes*2,nPatches);
-    Cs = zeros(nPatches,numNodes*2);
-    for i = 1:nPatches
-        for j = 1:nsElementsP
-            el = modelSettings.sElements((i-1)*nsElementsP + j);
-            n1 = elements(el).neighbours(1);
-    
-            Bg(n1*2-1:n1*2+2,i) = Bg(n1*2-1:n1*2+2,i) + G;
-            Cs(i,n1*2-1:n1*2+2) = Cs(i,n1*2-1:n1*2+2) + S;
-        end
-    end
-
-% Bmatrices
-    % External input B matrix (in d coordinates)
-        % Find interpolate nodes
-%         height = modelSettings.measurementHeight*L;
-%         pos = unique([elements.pos]');
-%         diff = pos-height;
-%         upperNode = find(round(diff,4)>=0,1);
-%         interpNodes = [upperNode-1,upperNode];  
-%         interpEl = upperNode-1;
-% 
-%         % local coordinate alpha
-%         alpha = height - pos(interpNodes(1));                       % alpha = eta*obj.L
-%         N = [1, alpha, alpha^2, alpha^3]*elements(interpEl).Ainv;
-%         
-%         Bext(interpNodes(1)*2-1:interpNodes(1)*2+2) = N;
-        Bext = zeros(numNodes*2,1);
-        fNode = numNodes;                                      % force Node at top right now..
-        Bext(fNode*2-1) = 1;                                % Force at last node in x direction 
-
-% C matrices    
-    % Measurement C matrix for laser measurement
-        % Find interpolate nodes
-        height = modelSettings.measurementHeight*L;
-        pos = unique([elements.pos]');
-        diff = pos-height;
-        upperNode = find(round(diff,4)>=0,1);
-        interpNodes = [upperNode-1,upperNode];  
-        interpEl = upperNode-1;
-        
-        % local coordinate alpha
-        alpha = height - pos(interpNodes(1));                       % alpha = eta*obj.L
-        N = [1, alpha, alpha^2, alpha^3]*elements(interpEl).Ainv;
-        Cmeasurement = zeros(1,numNodes*2);                         
-        Cmeasurement(interpNodes(1)*2-1:interpNodes(1)*2+2) = N;    % Construct C from this (cubic interpolation)
-    
-    % Acceleration measurement C matrix
-        % Accelerometer C matrix
-        Cacc = zeros(nAcc,numNodes*2);
-        for i = 1:nAcc
-            interpEl = accPos(i,1);
-            alpha = accPos(i,2)*elements(interpEl).L;
-            interpNodes = [interpEl,interpEl+1];
-            N = [1, alpha, alpha^2, alpha^3]*elements(interpEl).Ainv;
-            Cacc(i,interpNodes(1)*2-1:interpNodes(1)*2+2) = N;
-        end
-       
-% Damping matrix 
-    Cmodal = 2*Beam.zeta*sqrt(omega2);
-
-%% Construct full system 
-A = [zeros(Nmodes),eye(Nmodes);
-    -omega2,-Cmodal];
-B = [zeros(Nmodes,nPatches+1);                          
-    Phi'*[Bext,Bg]];                             % [Force input, Piezo inputs]
-C = [Cmeasurement*Phi, zeros(1,Nmodes);                 % Laser measurement
-    Cs*Phi,zeros(nPatches,Nmodes);                      % Piezo outputs
-    -Cacc*Phi*omega2, -Cacc*Phi*Cmodal];                % Accelerometer outputs
-D = [zeros(nPatches+1,size(B,2));                       % No throughput laser,base and piezo measurements
-    Cacc*(Phi*Phi')*[Bext,Bg]];                  % Throughput for acceleration measurements!
-
-sys = ss(A,B,C,D);
-
-% Define true process and measurement noise covariances
-Q = eye(Nmodes*2)*modelSettings.wcov;
-R = [modelSettings.laserCov,zeros(1,nPatches+nAcc);
-    zeros(nPatches,1), eye(nPatches)*modelSettings.patchCov, zeros(nPatches,nAcc);            % Allow for different covariances for different sensors!
-    zeros(nAcc,1), zeros(nAcc,nPatches), eye(nAcc)*modelSettings.accCov]; 
-S = zeros(Nmodes*2,1+nPatches+nAcc);
-
-% Noise influence matrices Bw and Dv
-Bw = eye(Nmodes*2);
-Dv = eye(1+nPatches+nAcc);
-
-% Put the system together with other information in a larger model object. 
-SYS = model('Continuous time beam model'); % create model object called SYS!
-    SYS.elements = elements;
-    SYS.analyticalf1 = analyticalf1;
-    SYS.numEl = numEl;
-    SYS.numNodes = numNodes;
-    SYS.Phi = Phi;
-    SYS.omega2 = omega2;
-    SYS.plotSettings = plotSettings;
-    SYS.modelSettings = modelSettings;
-    SYS.simulationSettings = simulationSettings;
-    SYS.Q = Q;
-    SYS.R = R;
-    SYS.S = S;
-    SYS.Bw = Bw;
-    SYS.Dv = Dv;
-    SYS.sys = sys;
 
 % Give summary of model
+numEl = modelSettings.numEl;
+Nmodes = modelSettings.Nmodes;
 fprintf(['    # patches: %d \n'...
          '    # accelerometers: %d \n'...
          '    # elements: %d \n'...
-         '    # modes: %d \n'],nPatches,nAcc,numEl,Nmodes)
+         '    # modes: %d \n'],nPatches,nAcc,numEl,Nmodes);
 
-%{
-The total model looks like:
+% Observer model with possible modelling error
+if simulationSettings.modelError == true
+    Beam.rho = Beam.rho*modelSettings.rhoError;                         % Beam mass error
+    modelSettings.mAcc = modelSettings.mAcc*modelSettings.mAccError;    % Accelerometer mass error
+    modelSettings.Acc = modelSettings.Acc - modelSettings.AccError;     % Acceleromter position error
+end
 
-State:      Size:       Quantity:
-q = |z |    Nmodes      Modal states
-    |zd|    Nmodes      Modal velocities     
-
-Inputs & Outputs:
-Inputs:                           Model:      Outputs:
-                               ___________    | L | laser measurement 
-| F | Force                   |           |   |ps1| Piezo Sensor outputs
-|pa1| Piezo Actuator inputs   |           |   |...|
-|...|                       =>|    sys    |=> |psn|        
-|pan|                         |           |   |ac1| Accelerometer outputs  
-                              |___________|   |...|
-                                              |acn|
-The amount of piezo actuators and sensors depends on the settings at the
-defined top of the file. Also the amount of accelerometers. The system is
-by default in modal space (TODO).
-
-SYS contains all necessary information for plotting and
-simulation. This way SYS can just be saved and used in other files or
-functions. 
-%}
-
-%% Discretisation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% To be able to simulate the system, it is discretised. 
-c2dMethod = 'ZOH';
-dsys = c2d(sys,simulationSettings.dt,c2dMethod);            % Discretise using ZOH
-dSYS = SYS;                                                 % Make new system
-dSYS.sys = dsys;
-dSYS.descr = 'Discrete time beam model';
+SYS_obs = model('Erroneous beam model');
+[SYS_obs, dSYS_obs, modelSettings] = buildBeam(modelSettings,simulationSettings,plotSettings,Beam,sBeam,SYS_obs); % Fill model object
 
 %% Time simulation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % This simulates the system and makes nice plots and stuff. It is not
@@ -489,19 +204,20 @@ dSYS.descr = 'Discrete time beam model';
 
 if simulationSettings.simulate ==  true
     fprintf(['Setting up simulation...\n'...
-            '    Noise: ', num2str(simulationSettings.noise),'\n'...
-            '    Offset: %1.1e\n'],simulationSettings.obsOffset);
+            '    Noise: %d\n'...
+            '    Offset: %1.1e\n'...
+            '    Model Error: %d\n'],simulationSettings.noise,simulationSettings.obsOffset,simulationSettings.modelError);
 
     % Snip off laser measurement for observers (As they can't use this)
-    dsys_sim = dsys;                        % Simulated model!
-    dsys_obs = dsys(2:end,1:end);           % Model used for observers!
+    dsys_sim = dSYS_sim.sys;                        % Simulated model!
+    dsys_obs = dSYS_obs.sys(2:end,1:end);           % Model used for observers!
 
     % Handy defenitions & Unpacking
     T = simulationSettings.T;
     dt = simulationSettings.dt;
     t = 0:dt:T;
 
-    ny = size(dsys_sim,1);                  % Number of outputs
+    ny = size(dsys_sim,1);                  % Number of outputs (Total)
     nu = size(dsys_sim,2);                  % Number of inputs
     nq = size(dsys_sim.A,1);                % Number of states
 
@@ -526,11 +242,11 @@ if simulationSettings.simulate ==  true
 
     % KF setup-------------------------------------------------------------
     if any(ismember(simulationSettings.observer,"KF"))
-        KF.Q = dSYS.Q*KF.QTune;
-        KF.R = dSYS.R(2:end,2:end)*KF.RTune;                          % Snip off laser measurement
-        KF.S = dSYS.S(:,2:end);
-        KF.Bw = dSYS.Bw;
-        KF.Dv = dSYS.Dv(2:end,2:end); 
+        KF.Q = dSYS_obs.Q*KF.QTune;
+        KF.R = dSYS_obs.R(2:end,2:end)*KF.RTune;                          % Snip off laser measurement
+        KF.S = dSYS_obs.S(:,2:end);
+        KF.Bw = dSYS_obs.Bw;
+        KF.Dv = dSYS_obs.Dv(2:end,2:end); 
           
         if KF.stationary == true
             % Find stationary kalman gain by solving discrete algebraic ricatti equation
@@ -550,7 +266,7 @@ if simulationSettings.simulate ==  true
     if any(ismember(simulationSettings.observer,"AKF"))
         % q -> [q;qd;u] ->nq+nu*nd
 
-        AKF.S = [dSYS.S(:,2:end); zeros(nu*(nd_AKF+1),ny-1)];
+        AKF.S = [dSYS_obs.S(:,2:end); zeros(nu*(nd_AKF+1),ny-1)];
 
         % Generate temporary ss model for input dynamics (higher order
         % derivatives can then be modelled!
@@ -561,21 +277,21 @@ if simulationSettings.simulate ==  true
             uC = zeros(1,nu*nd_AKF);
             uD = [];
             Uss = ss(uA,uB,[],[]);
-            Uss = c2d(Uss,dt,c2dMethod);
+            Uss = c2d(Uss,dt,modelSettings.c2dMethod);
 
-        AKF.Dv = dSYS.Dv(2:end,2:end);
-        AKF.Bw = [dSYS.Bw,zeros(nq,nu);
+        AKF.Dv = dSYS_obs.Dv(2:end,2:end);
+        AKF.Bw = [dSYS_obs.Bw,zeros(nq,nu);
             zeros(nu*(nd_AKF+1),nq),Uss.B];
         AKF.A = [dsys_obs.A, dsys_obs.B,zeros(nq,nu*nd_AKF);
                 zeros(nu*(nd_AKF+1),nq),Uss.A];
         AKF.C = [dsys_obs.C, dsys_obs.D, zeros(ny-1,nu*nd_AKF)];
                                   
-        AKF.R = dSYS.R(2:end,2:end)*AKF.RTune;                                       % Do you trust your measurements?
-        AKF.Q = dSYS.Q*AKF.QTune;                                           % Do you trust your model?
+        AKF.R = dSYS_obs.R(2:end,2:end)*AKF.RTune;                                       % Do you trust your measurements?
+        AKF.Q = dSYS_obs.Q*AKF.QTune;                                           % Do you trust your model?
         AKF.Qu = [1,zeros(1,nPatches);
                   zeros(nPatches,1),zeros(nPatches,nPatches)]*AKF.QuTune;                  % Input covariance!!
 
-        AKF.Q = [Q,zeros(nq,nu); % Assemble augmented Q matrix
+        AKF.Q = [dSYS_obs.Q,zeros(nq,nu); % Assemble augmented Q matrix
             zeros(nu,nq),AKF.Qu];
     
         if AKF.stationary == true
@@ -609,16 +325,19 @@ if simulationSettings.simulate ==  true
                     zeros(nu,nu*(nd_DKF+1))];
             uB = [zeros(nd_DKF*nu,nu);
                     eye(nu)];
-            uC = zeros(1,nu*nd_DKF);
+            uC = zeros(1,nu*(nd_DKF+1));
+            uC((0:nu-1)*(nd_DKF+1)+1) = ones(1,nu);
+
             uD = [];
-            Uss = ss(uA,uB,[],[]);
-            Uss = c2d(Uss,dt,c2dMethod);
+            Uss = ss(uA,uB,uC,[]);
+            Uss = c2d(Uss,dt,modelSettings.c2dMethod);
         
         DKF.uA = Uss.A;
-        DKF.uB = Uss.B; % Don't do anything yet. Continue here tomorrow..
+        DKF.uB = Uss.B; 
+        DKF.uC = Uss.C; % IMPLEMENT THIS IN SIMULATION LOOP! (So does not work yet)
 
-        DKF.Q = Q*DKF.QTune;
-        DKF.R = R(2:end,2:end)*DKF.QTune;                             % Snipp off laser measurement
+        DKF.Q = dSYS_obs.Q*DKF.QTune;
+        DKF.R = dSYS_obs.R(2:end,2:end)*DKF.RTune;                             % Snipp off laser measurement
         DKF.Qu = eye(nu)*DKF.QuTune;
 
         fprintf(['    Dual Kalman Filter-> \n'...
@@ -626,14 +345,24 @@ if simulationSettings.simulate ==  true
     end
 
     % GDF setup------------------------------------------------------------
+    if any(ismember(simulationSettings.observer,"GDF"))
+        GDF.A = dsys_obs.A;
+        GDF.B = dsys_obs.B;
+        GDF.C = dsys_obs.C;
+        GDF.D = dsys_obs.D;
 
+        GDF.Q = dSYS_obs.Q*GDF.QTune;
+        GDF.R = dSYS_obs.R(2:end,2:end)*GDF.RTune;                             % Snipp off laser measurement
+
+        fprintf(['    Giljins de Moor filter-> \n'])
+    end
     % Some initialisations!!!
     yfull = zeros(ny,length(t));            % System output
     yfull_LO = zeros(ny,length(t)); 
     yfull_KF = zeros(ny,length(t));
     yfull_AKF = zeros(ny,length(t));
     yfull_DKF = zeros(ny,length(t));
-    yfull_GMF = zeros(ny,length(t));
+    yfull_GDF = zeros(ny,length(t));
 
     U = zeros(nu,1);                                        % Input vector
 
@@ -646,36 +375,27 @@ if simulationSettings.simulate ==  true
 
     % ufull_AKF can be found in the last two states of qfull_AKF (due tobthe augmented nature)
     ufull_DKF = zeros(nu,length(t));
+    ufull_GDF = zeros(nu,length(t));
 
-    q0 = zeros(nq,1);                                       % Normal time simulation    
-    q0_LO = ones(nq,1)*simulationSettings.obsOffset;        % Initial state estimate for LO
-    q0_KF = ones(nq,1)*simulationSettings.obsOffset;        % Initial state estimate for KF
-    q0_AKF = zeros(nq+nu*(nd_AKF+1),1);                         % Initial sate estimate for AKF 
-        q0_AKF(1:nq) = ones(nq,1)*simulationSettings.obsOffset; % Only  beam states offset error
-    q0_DKF = ones(nq,1)*simulationSettings.obsOffset;       % Initial state estimate for DKF
-        u0_DKF = zeros(nu,1);
-    q0_GDF = ones(nq,1)*simulationSettings.obsOffset;       % Initial state estimate for GDF
+    q1 = zeros(nq,1);                                       % Normal time simulation    
+    q1_LO = ones(nq,1)*simulationSettings.obsOffset;        % Initial state estimate for LO
+    q1_KF = ones(nq,1)*simulationSettings.obsOffset;        % Initial state estimate for KF
+    q1_AKF = zeros(nq+nu*(nd_AKF+1),1);                         % Initial sate estimate for AKF 
+        q1_AKF(1:nq) = ones(nq,1)*simulationSettings.obsOffset; % Only  beam states offset error
+    q1_DKF = ones(nq,1)*simulationSettings.obsOffset;       % Initial state estimate for DKF
+        u1_DKF = zeros(nu,1);
+    q1_GDF = ones(nq,1)*simulationSettings.obsOffset;       % Initial state estimate for GDF
+        u1_GDF = zeros(nu,1);
 
-    P0_KF = zeros(nq);                                        % Initial P matrix kalman filter
-    P0_AKF = zeros(nq+nu*(nd_AKF+1));
-    P0_DKF = zeros(nq);
-        Pu0_DKF = zeros(nu);
+    P1_KF = zeros(nq);                                        % Initial P matrix kalman filter
+    P1_AKF = zeros(nq+nu*(nd_AKF+1));
+    P1_DKF = zeros(nq);
+        Pu1_DKF = zeros(nu);
+    Pq1_GDF  = zeros(nq);
+        Pu1_GDF = zeros(nu);
 
-    q1 = q0;                % Initialise at q0 (Looks weird, but is correct. (look at first line of loop)
-    q1_LO = q0_LO;          % Also for the observers
-    q1_KF = q0_KF;
-    q1_AKF = q0_AKF;
-    q1_DKF = q0_DKF;
-        u1_DKF = u0_DKF;
-    q1_GDF = q0_GDF;
-
-    P1_KF = P0_KF;
-    P1_AKF = P0_AKF;
-    P1_DKF = P0_DKF;
-        Pu1_DKF = Pu0_DKF;
-
-    W = mvnrnd(zeros(nq,1),Q,T/dt+1)';
-    V = mvnrnd(zeros(ny,1),R,T/dt+1)';
+    W = mvnrnd(zeros(nq,1),dSYS_obs.Q,T/dt+1)';
+    V = mvnrnd(zeros(ny,1),dSYS_obs.R,T/dt+1)';
 
     fprintf(['    T: %.2f s \n'...
             '    dt: %.4f s\n'...
@@ -693,11 +413,14 @@ if simulationSettings.simulate ==  true
         q_DKF = q1_DKF;
             u_DKF = u1_DKF;
         q_GDF = q1_GDF;
+            u_GDF = u1_GDF;
 
         P_KF = P1_KF;
         P_AKF = P1_AKF;
         P_DKF = P1_DKF;
             Pu_DKF = Pu1_DKF;
+        Pq_GDF = Pq1_GDF;
+            Pu_GDF = Pu1_GDF;
 
         % Simulate system
             % Pick input
@@ -713,8 +436,8 @@ if simulationSettings.simulate ==  true
             end
     
             % Propagate discrete time dynamic system
-            q1 = dsys_sim.A*q + dsys_sim.B*U + Bw*w;           % Propagate dynamics
-            y = dsys_sim.C*q + dsys_sim.D*U + Dv*v;       % Measurement equation
+            q1 = dsys_sim.A*q + dsys_sim.B*U + dSYS_obs.Bw*w;           % Propagate dynamics
+            y = dsys_sim.C*q + dsys_sim.D*U + dSYS_obs.Dv*v;       % Measurement equation
 
             % Also save full states for plotting (in q space, so modal)
             qfull(:,i) = q;
@@ -724,7 +447,7 @@ if simulationSettings.simulate ==  true
             % LO ----------------------------------------------------------
             if any(ismember(simulationSettings.observer,'LO'))
                 q1_LO = dsys_obs.A*q_LO + dsys_obs.B*U + LO.L*(y(2:end)-dsys_obs.C*q_LO-dsys_obs.D*U);
-                yfull_LO(:,i) = dsys.C*q_LO + dsys.D*U; % Estimated output
+                yfull_LO(:,i) = dsys_sim.C*q_LO + dsys_sim.D*U; % Estimated output
                 qfull_LO(:,i) = q_LO;       % Save estimated state
             end 
 
@@ -749,7 +472,7 @@ if simulationSettings.simulate ==  true
 
                     % Save state and output
                     qfull_KF(:,i) = q_KF;                    
-                    yfull_KF(:,i) = dsys.C*q_KF + dsys.D*U;
+                    yfull_KF(:,i) = dsys_sim.C*q_KF + dsys_sim.D*U;
 
                 end
             end
@@ -776,7 +499,7 @@ if simulationSettings.simulate ==  true
 
                     % Save state and output
                     qfull_AKF(:,i) = q_AKF;                    
-                    yfull_AKF(:,i) = [dsys.C(1,:),zeros(1,nu*(nd_AKF+1));
+                    yfull_AKF(:,i) = [dsys_sim.C(1,:),zeros(1,nu*(nd_AKF+1));
                                     AKF.C]*q_AKF;
                 end
             end
@@ -789,16 +512,16 @@ if simulationSettings.simulate ==  true
                 u_DKF = u_DKF + Ku_DKF*(y(2:end)-DKF.C*q_DKF-DKF.D*u_DKF);
                 Pu_DKF = Pu_DKF - Ku_DKF*DKF.D*Pu_DKF;
 
+                % Time update of INPUT estimate
+                u1_DKF = u_DKF;                 % Random walk!
+                Pu1_DKF = Pu_DKF + DKF.Qu;
+
                 % Measurement update STATE estimate
                 K_DKF = P_DKF*DKF.C'/(DKF.C*P_DKF*DKF.C' + DKF.R);
 
                 q_DKF = q_DKF + K_DKF*(y(2:end)-DKF.C*q_DKF-DKF.D*u_DKF);
                 P_DKF = P_DKF - K_DKF*DKF.C*P_DKF;
 
-                % Time update of INPUT estimate
-                u1_DKF = u_DKF;                 % Random walk!
-                Pu1_DKF = Pu_DKF + DKF.Qu;
-                
                 % Time update STATE estimate
                 q1_DKF = DKF.A*q_DKF + DKF.B*u_DKF;  % Dynamics propagation using estimated input
                 P1_DKF = DKF.A'*P_DKF*DKF.A + DKF.Q;
@@ -806,14 +529,34 @@ if simulationSettings.simulate ==  true
                 % Save state,estimated input and output 
                 qfull_DKF(:,i) = q_DKF;    
                 ufull_DKF(:,i) = u_DKF;
-                yfull_DKF(:,i) = [dsys.C(1,:);
+                yfull_DKF(:,i) = [dsys_sim.C(1,:);
                                 DKF.C]*q_DKF; 
-                
+               
             end
             
-            % GDF
+            % GDF----------------------------------------------------------
             if any(ismember(simulationSettings.observer,'GDF'))
-                % This'll be a bitch 
+                % Input estimation
+                Rt_GDF = GDF.C*Pq_GDF*GDF.C' + GDF.R;
+                M_GDF = (GDF.D'/Rt_GDF*GDF.D)\GDF.D'/Rt_GDF;
+                u_GDF = M_GDF*(y(2:end)-GDF.C*q_GDF);
+                Pu_GDF = eye(nu)/(GDF.D'/Rt_GDF*GDF.D);
+
+                % Measurement update
+                K_GDF = Pq_GDF*GDF.C'/GDF.R;
+                q_GDF = q_GDF + K_GDF*(y(2:end)-GDF.C*q_GDF-GDF.D*u_GDF);
+                Pq_GDF = Pq_GDF - K_GDF*(Rt_GDF - GDF.D*Pu_GDF*GDF.D')*K_GDF';
+                Pqu_GDF = -K_GDF*GDF.D*Pu_GDF;
+
+                % Time update
+                q1_GDF = GDF.A*q_GDF + GDF.B*u_GDF;
+                Pq1_GDF = [GDF.A GDF.B]*[Pq_GDF ,Pqu_GDF; Pqu_GDF' Pu_GDF]*[GDF.A'; GDF.B'] + GDF.Q;
+
+                % Save state, estimated input and output
+                qfull_GDF(:,i) = q_GDF;    
+                ufull_GDF(:,i) = u_GDF;
+                yfull_GDF(:,i) = [dsys_sim.C(1,:);
+                                GDF.C]*q_GDF; 
             end
 
         % Update waitbar and check cancel button
@@ -832,28 +575,29 @@ if simulationSettings.simulate ==  true
     end
 
     % Save simulation data in the larger model struct. 
-    dSYS.simulationData.t = t;
-    dSYS.simulationData.Udist = Udist;
+    dSYS_sim.simulationData.t = t;
+    dSYS_sim.simulationData.Udist = Udist;
     
-    dSYS.simulationData.qfull = qfull;
-    dSYS.simulationData.qfull_LO = qfull_LO;
-    dSYS.simulationData.qfull_KF = qfull_KF;
-    dSYS.simulationData.qfull_AKF = qfull_AKF;
-    dSYS.simulationData.qfull_DKF = qfull_DKF;
-    dSYS.simulationData.qfull_GDF = qfull_GDF;
+    dSYS_sim.simulationData.qfull = qfull;
+    dSYS_sim.simulationData.qfull_LO = qfull_LO;
+    dSYS_sim.simulationData.qfull_KF = qfull_KF;
+    dSYS_sim.simulationData.qfull_AKF = qfull_AKF;
+    dSYS_sim.simulationData.qfull_DKF = qfull_DKF;
+    dSYS_sim.simulationData.qfull_GDF = qfull_GDF;
 
-    dSYS.simulationData.yfull = yfull;
-    dSYS.simulationData.yfull_LO = yfull_LO;
-    dSYS.simulationData.yfull_KF = yfull_KF;
-    dSYS.simulationData.yfull_AKF = yfull_AKF;
-    dSYS.simulationData.yfull_DKF = yfull_DKF;
-    dSYS.simulationData.yfull_GMF = yfull_GMF;
+    dSYS_sim.simulationData.yfull = yfull;
+    dSYS_sim.simulationData.yfull_LO = yfull_LO;
+    dSYS_sim.simulationData.yfull_KF = yfull_KF;
+    dSYS_sim.simulationData.yfull_AKF = yfull_AKF;
+    dSYS_sim.simulationData.yfull_DKF = yfull_DKF;
+    dSYS_sim.simulationData.yfull_GDF = yfull_GDF;
 
-    dSYS.simulationData.ufull_DKF = ufull_DKF;
+    dSYS_sim.simulationData.ufull_DKF = ufull_DKF;
+    dSYS_sim.simulationData.ufull_GDF = ufull_GDF;
 
     % Make a nice plot of the simulation!
     if plotSettings.plot == true
-       plots = plotter(dSYS);
+       plots = plotter(dSYS_sim);
     end
 end
 
@@ -861,93 +605,6 @@ scriptElapsed = toc(startScript);
 fprintf('DONE!!  in %2.2f Seconds! \n',scriptElapsed)
 
 %% FUNCTIONS!!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-% Get element lengths for adaptive mesh (Taking smart patches into account)
-function [Ls,sElements] = getLengths(modelSettings,sBeam)
-
-    nPatches = length(modelSettings.patches);   % Number of patches
-    nsElementsP = modelSettings.nsElementsP;    % Number of smart elements per patch
-    nsElements = nPatches*nsElementsP;          % Number of smart elements in total
-    L = modelSettings.L;
-
-    if ~isempty(modelSettings.patches)
-        ngaps = nPatches+1;                         % Number of gaps in theory
-        gaps = zeros(1,ngaps);                      
-    
-        for i = 1:ngaps% Get the length of every gap (between the patches)
-            if i == 1                   % The first gap
-                gaps(i) = modelSettings.patches(i)*L; 
-            elseif i <= nPatches                       % The rest of the gaps
-                gaps(i) = modelSettings.patches(i)*L-(sum(gaps(1:i))+(i-1)*sBeam.L*nsElementsP);
-            else
-                gaps(i) = L-(sum(gaps(1:i))+(i-1)*sBeam.L*nsElementsP);
-            end
-        end
-    
-        % Catch some errors here already
-        if sum(gaps)+nPatches*sBeam.L*nsElementsP - L > 0
-            error('Gaps are not correct (do not sum up to total length of beam)')
-        end
-        for i = 1:length(gaps)
-            if gaps(i) < 0 
-                error('Patches are too close together! (They overlap)')
-            end
-        end
-    
-        nGapElements = ceil(gaps/(modelSettings.LbElements*L)); % Get number of elements per gap
-    
-        gelementLengths = cell(ngaps,1);                         % Intermediate cell array containing lengths of elements in gaps
-        for i = 1:ngaps
-            elementL = gaps(i)/nGapElements(i);
-            gelementLengths{i} = ones(1,nGapElements(i))*elementL;
-        end
-    
-        pelementLengths = cell(nPatches,1);
-        for i = 1:nPatches
-            elementL = sBeam.L;
-            pelementLengths{i} = ones(1,modelSettings.nsElementsP)*elementL;
-        end
-    
-        Ls = [];
-        sElements = [];
-        for i = 1:nPatches+1
-           if i <= nPatches
-               Ls = [Ls,gelementLengths{i},pelementLengths{i}];
-               sElements = [sElements,zeros(1,length(gelementLengths{i})),ones(1,length(pelementLengths{i}))];
-           else
-               Ls = [Ls,gelementLengths{i}];
-               sElements = [sElements,zeros(1,length(gelementLengths{i}))];
-           end
-        end
-        
-        if round(sum(Ls) - L,4) > 0
-            error('Ls is not correct! (not the same as L')
-        end
-        if sum(sElements) - nsElements > 0
-            error('sElements is incorrect!')
-        end
-    else
-        nElements = 1/modelSettings.LbElements;
-        Ls = ones(1,nElements)*L/nElements;
-        sElements = [];
-    end
-end
-
-% Compute analytical integrals for paper. 
-function [intS,intG] = shapeFunctions()
-    syms L y
-    
-    A = [1, 0, 0, 0;
-            0, 1, 0, 0;
-            1, L, L^2, L^3;
-            0, 1, 2*L, 3*L^2];
-    N = [1, y, y^2, y^3]/A;
-    n1 = diff(N,y);
-    n2 = diff(n1,y);
-    
-    intS = int(n2,0,L);
-    intG = int(n1,0,L);
-end
 
 % Input generation for impulse, step, harmonic and random signals
 function [U] = generateInput(simulationSettings)

@@ -28,9 +28,10 @@ y_LO = model.simulationData.yfull_LO;
 y_KF = model.simulationData.yfull_KF;
 y_AKF = model.simulationData.yfull_AKF;
 y_DKF = model.simulationData.yfull_DKF;
-y_GMF = model.simulationData.yfull_GMF;
+y_GDF = model.simulationData.yfull_GDF;
 
 u_DKF = model.simulationData.ufull_DKF;
+u_GDF = model.simulationData.ufull_GDF;
 
 nPatches = length(modelSettings.sElements)/modelSettings.nsElementsP;
 nAcc = length(modelSettings.Acc);
@@ -143,7 +144,7 @@ if any(ismember(simulationSettings.observer,'DKF'))
     plot(measurementAx,t,y_DKF(1,:),'color',[0.3010 0.7450 0.9330]);
 end
 if any(ismember(simulationSettings.observer,'GDF'))
-    plot(measurementAx,t,y_GMF(1,:),'color',[0.6350 0.0780 0.1840]);
+    plot(measurementAx,t,y_GDF(1,:),'color',[0.6350 0.0780 0.1840]);
 end
 
 legend(measurementAx,['True' simulationSettings.observer])
@@ -190,8 +191,6 @@ if plotSettings.statePlot == true
         movegui(b,'north')
     end
 
-
-
     % Plot Luenberger observer
     if any(ismember(simulationSettings.observer,'LO'))
         qfull_LO = model.simulationData.qfull_LO;
@@ -225,11 +224,11 @@ if plotSettings.statePlot == true
 
     end
 
-    % Plot Giljins de Moor Filter
+    % Plot Giljins de Moor Filter (GDF)
     if any(ismember(simulationSettings.observer,'GDF'))
         qfull_GDF = model.simulationData.qfull_GDF;
         for i = 1:Nmodes
-            plot(gca,t,qfull_GDF(i,:),'color',[0.6350 0.0780 0.1840]);
+            plot(axes(i),t,qfull_GDF(i,:),'color',[0.6350 0.0780 0.1840]);
         end
     end
     legend(axes(1),['True' simulationSettings.observer])
@@ -256,13 +255,16 @@ if plotSettings.statePlot == true
         if any(ismember(simulationSettings.observer,'DKF'))
             plot(inputAx,t,u_DKF(1,:),'color',[0.3010 0.7450 0.9330]);
         end
+
+        % Plot Giljins de Moor Filter (GDF)
+        if any(ismember(simulationSettings.observer,'GDF'))
+            plot(inputAx,t,u_GDF(1,:),'color',[0.6350 0.0780 0.1840]);
+        end
         
-        LOLocation = ismember(simulationSettings.observer,"LO");
-        KFLocation = ismember(simulationSettings.observer,"KF");
         AKFLocation = ismember(simulationSettings.observer,"AKF");
         DKFLocation = ismember(simulationSettings.observer,"DKF");
         GDFLocation = ismember(simulationSettings.observer,"GDF");
-        theRest = ~(LOLocation+KFLocation+AKFLocation+DKFLocation+GDFLocation);
+        theRest = logical(AKFLocation + DKFLocation + GDFLocation);
         legend(inputAx,['True' simulationSettings.observer(theRest)])
     end
     drawnow;
