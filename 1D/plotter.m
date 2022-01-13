@@ -24,6 +24,7 @@ qfull =     model.simulationData.qfull;             % full states in q space
 y =         model.simulationData.yfull;
 Udist =     model.simulationData.Udist;
 
+y_MF = model.simulationData.yfull_MF;
 y_LO = model.simulationData.yfull_LO;
 y_KF = model.simulationData.yfull_KF;
 y_AKF = model.simulationData.yfull_AKF;
@@ -58,7 +59,10 @@ subplot(12,3,[2,3,5,6])
     title 'Laser Measurement'
     measurementAx = gca;
     xlim([0,simulationSettings.T]);
-    ylim(1.1*[min(y(1,:)),max(y(1,:))])  
+    if min(y(1,:)) ~= max(y(1,:))
+        ylim(1.1*[min(y(1,:)),max(y(1,:))])
+    else
+    end
 subplot(12,3,[11,12,14,15]);
     hold on
     grid on
@@ -131,6 +135,9 @@ end
 
 %% Laser plot
 plot(measurementAx,t,y(1,:),'k'); % Sensor
+if any(ismember(simulationSettings.observer,'MF'))
+    plot(measurementAx,t,y_MF(1,:),'color',[0 0.4470 0.7410]);
+end
 if any(ismember(simulationSettings.observer,'LO'))
     plot(measurementAx,t,y_LO(1,:),'color',[0.8500 0.3250 0.0980]);
 end
@@ -184,11 +191,22 @@ if plotSettings.statePlot == true
         grid on
         ylabel(['$\eta$',num2str(i)])  
         xlim([0,simulationSettings.T]);
-        ylim(1.1*[min(qfull(i,:)),max(qfull(i,:))])        
+        if min(qfull(i,:)) ~= max(qfull(i,:))
+            ylim(1.1*[min(qfull(i,:)),max(qfull(i,:))])  
+        else
+        end
         axes(i) = gca;
         plot(gca,t,qfull(i,:),'k');             % Plot true states
 
         movegui(b,'north')
+    end
+    
+    % Plot modal filter
+    if any(ismember(simulationSettings.observer,'MF'))
+        qfull_MF = model.simulationData.qfull_MF;
+        for i = 1:Nmodes
+            plot(axes(i),t,qfull_MF(i,:),'color',[0 0.4470 0.7410]);
+        end
     end
 
     % Plot Luenberger observer

@@ -10,8 +10,7 @@ Doi:10.48084/etasr.3949
 
 The author of this code is Pim de Bruin. 
 
-The main model parameters are found at the top of the script. The feedback
-and piezo parameters are found around line 260 and 200 respectively. 
+The main model parameters are found at the top of the script.
 
 The patches can be placed through modelSettings.patches. This is a vector
 with the bottom location of each patch in natural coordinates. the length
@@ -20,7 +19,7 @@ determined through patchL. Same goes for the accelerometers and
 modelSettings.Acc. 
 
 The rest of the parameters are relatively self explanatory. If you have any
-questions or find an error (very probable) dont hesitate to send me a
+questions or find an error (very very probable) don't hesitate to send me a
 message! @ P.E.deBruin@student.tudelft.nl
 
 XXX Pim
@@ -50,13 +49,13 @@ patchL = 50e-3; % Patch length
 
 % Model settings%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Smart patches (Piezo)
-    modelSettings.patches = [];                             % location of start of patches (y/L)
+    modelSettings.patches = [0,0.5,0.8];                             % location of start of patches (y/L)
     modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
     modelSettings.LbElements = 0.1;                         % Preferred length of beam elements (y/L) (will change slightly)
-    modelSettings.patchCov = 1e-6;                          % True covariance of patch measurement
+    modelSettings.patchCov = 0.01;                          % True covariance of patch measurement
 
 % Accelerometers
-    modelSettings.Acc = [1,0.75,0.5];                        % Location of accelerometers
+    modelSettings.Acc = [0.75,1];                        % Location of accelerometers
     modelSettings.mAcc = 0.01;                              % Mass of accelerometers
     modelSettings.accCov = 0.1;%10;                             % True covariance of accelerometer measurement
 
@@ -64,7 +63,7 @@ patchL = 50e-3; % Patch length
 
 % Modelling 
     modelSettings.Nmodes = 5;                              % Number of modes to be modelled (Can't be larger then the amount of nodes)
-    modelSettings.measurementHeight = 0.85;                    % Height of the measurement
+    modelSettings.measurementHeight = 1;                    % Height of the measurement
     modelSettings.forceHeight = 0.5;                        % Height of the input force.
     
     modelSettings.wcov = 0;                              % Process noise covariance
@@ -82,7 +81,7 @@ simulationSettings.simulate = true;                     % Simulate at all?
     simulationSettings.waitBar = false;                      % Give waitbar and cancel option (VERY SLOW)
     simulationSettings.noise = true;                        % Turn on or off all noise!
     simulationSettings.modelError = true;               % Turn on or off al model errors!
-
+    
     % Time settings (Settings for the time and stepsize of the simulation)
     simulationSettings.dt = 1e-3;                       % Sampling time
     simulationSettings.T = 2;                           % Total simulation time
@@ -100,7 +99,7 @@ simulationSettings.simulate = true;                     % Simulate at all?
             simulationSettings.randInt = [-1,1];        % random input interval (uniformly distributed)
     
     % Observer settings (Settings for the observers) 
-    simulationSettings.observer = ["LO" "KF" "AKF" "DKF" "GDF"];    % ["LO" "KF" "AKF" "DKF" "GDF"]
+    simulationSettings.observer = ["MF" "AKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"]
         simulationSettings.obsOffset = 1e-5;                % Initial state offset (we know its undeformed at the beginning, so probably 0); 
         
         % LO settings
@@ -115,7 +114,7 @@ simulationSettings.simulate = true;                     % Simulate at all?
         AKF.stationary = false;                         % Use stationary AKF?
         AKF.derivativeOrder = 0;                        % Higher order derivative? (0:CP, 1:CV, 2:CA)
         AKF.QTune = 1;                                  % Process noise covariance tuning
-        AKF.QuTune = 7e3;                               % Input sequence covariance tuning parameter
+        AKF.QuTune = 1e6;                               % Input sequence covariance tuning parameter
         AKF.RTune = 1;                                  % Measurement noise covariance tuning
 
         %{
@@ -129,7 +128,7 @@ simulationSettings.simulate = true;                     % Simulate at all?
         % DKF settings
         DKF.derivativeOrder = 0;                        % Does not work yet (TODO)
         DKF.QTune = 1;
-        DKF.QuTune = 1e-3;
+        DKF.QuTune = 1;
         DKF.RTune = 1;
 
         % GDF settings
@@ -140,7 +139,7 @@ simulationSettings.simulate = true;                     % Simulate at all?
 plotSettings.plot = true;                           % Plot the simulation?
     plotSettings.plotNodes = true;                          % Plot the nodes
         plotSettings.nodeNumbers = true;                   % Plot the node numbers
-    plotSettings.elementNumbers = true;                     % Plot the element numbers
+    plotSettings.elementNumbers = false;                     % Plot the element numbers
     plotSettings.sensor = true;                             % Plot the sensor in beam plot (red line)
     plotSettings.Input = true;                              % Plot given force input in the sensor plot
     plotSettings.accelerometers = true;                     % Plot accelerometers?
@@ -229,6 +228,11 @@ if simulationSettings.simulate ==  true
         f = waitbar(0,'1','Name','Running simulation loop...',...
         'CreateCancelBtn','setappdata(gcbf,''canceling'',1)');
         setappdata(f,'canceling',0);
+    end
+
+    % MF setup-------------------------------------------------------------
+    if any(ismember(simulationSettings.observer,"MF"))
+        Psi = pinv(dsys_obs.C);
     end
 
     % LO setup-------------------------------------------------------------
@@ -358,6 +362,7 @@ if simulationSettings.simulate ==  true
     end
     % Some initialisations!!!
     yfull = zeros(ny,length(t));            % System output
+    yfull_MF = zeros(ny,length(t));
     yfull_LO = zeros(ny,length(t)); 
     yfull_KF = zeros(ny,length(t));
     yfull_AKF = zeros(ny,length(t));
@@ -367,9 +372,10 @@ if simulationSettings.simulate ==  true
     U = zeros(nu,1);                                        % Input vector
 
     qfull = zeros(nq,length(t));                            % Full state vector over time
+    qfull_MF = zeros(nq,length(t));
     qfull_LO = zeros(nq,length(t));                         % Also for the observers
     qfull_KF = zeros(nq,length(t));
-    qfull_AKF = zeros(nq+nu*(nd_AKF+1),length(t));              % Augmented state for AKF
+    qfull_AKF = zeros(nq+nu*(nd_AKF+1),length(t));          % Augmented state for AKF
     qfull_DKF = zeros(nq,length(t));
     qfull_GDF = zeros(nq,length(t));
 
@@ -444,6 +450,16 @@ if simulationSettings.simulate ==  true
             yfull(:,i) = y;
 
         % Run state estimators
+            % MF ----------------------------------------------------------
+            if any(ismember(simulationSettings.observer,'MF'))
+                % Modal filter
+                q_MF = Psi*y(2:end);
+
+                % Save state and output
+                qfull_MF(:,i) = q_MF;
+                yfull_MF(:,i) = dsys_sim.C*q_MF;
+            end
+
             % LO ----------------------------------------------------------
             if any(ismember(simulationSettings.observer,'LO'))
                 q1_LO = dsys_obs.A*q_LO + dsys_obs.B*U + LO.L*(y(2:end)-dsys_obs.C*q_LO-dsys_obs.D*U);
@@ -480,7 +496,6 @@ if simulationSettings.simulate ==  true
             % AKF----------------------------------------------------------
             if any(ismember(simulationSettings.observer,'AKF'))
                 if AKF.stationary == true
-
                     % Steady state kalman filter (Same as LO, but with kalman gain)
                     q1_AKF = AKF.A*q_AKF + AKF.K*(y(2:end,i)-AKF.C*q_AKF);
 
@@ -512,15 +527,15 @@ if simulationSettings.simulate ==  true
                 u_DKF = u_DKF + Ku_DKF*(y(2:end)-DKF.C*q_DKF-DKF.D*u_DKF);
                 Pu_DKF = Pu_DKF - Ku_DKF*DKF.D*Pu_DKF;
 
-                % Time update of INPUT estimate
-                u1_DKF = u_DKF;                 % Random walk!
-                Pu1_DKF = Pu_DKF + DKF.Qu;
-
                 % Measurement update STATE estimate
                 K_DKF = P_DKF*DKF.C'/(DKF.C*P_DKF*DKF.C' + DKF.R);
 
                 q_DKF = q_DKF + K_DKF*(y(2:end)-DKF.C*q_DKF-DKF.D*u_DKF);
                 P_DKF = P_DKF - K_DKF*DKF.C*P_DKF;
+
+                % Time update of INPUT estimate
+                u1_DKF = u_DKF;                 % Random walk!
+                Pu1_DKF = Pu_DKF + DKF.Qu;
 
                 % Time update STATE estimate
                 q1_DKF = DKF.A*q_DKF + DKF.B*u_DKF;  % Dynamics propagation using estimated input
@@ -579,6 +594,7 @@ if simulationSettings.simulate ==  true
     dSYS_sim.simulationData.Udist = Udist;
     
     dSYS_sim.simulationData.qfull = qfull;
+    dSYS_sim.simulationData.qfull_MF = qfull_MF;
     dSYS_sim.simulationData.qfull_LO = qfull_LO;
     dSYS_sim.simulationData.qfull_KF = qfull_KF;
     dSYS_sim.simulationData.qfull_AKF = qfull_AKF;
@@ -586,6 +602,7 @@ if simulationSettings.simulate ==  true
     dSYS_sim.simulationData.qfull_GDF = qfull_GDF;
 
     dSYS_sim.simulationData.yfull = yfull;
+    dSYS_sim.simulationData.yfull_MF = yfull_MF;
     dSYS_sim.simulationData.yfull_LO = yfull_LO;
     dSYS_sim.simulationData.yfull_KF = yfull_KF;
     dSYS_sim.simulationData.yfull_AKF = yfull_AKF;
@@ -678,7 +695,6 @@ Adds these signals together in an imput signal U!
 
     % Construct full signal!
     U = uStep + uImpulse + uHarmonic + uRand; 
-
 
     if size(0:dt:T) ~= length(U)
         error('Input length is not correct! Probably indexing issue :(')
