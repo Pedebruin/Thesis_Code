@@ -1,5 +1,4 @@
 function simPlots = plotter(model)
-disp('Plotting simulation...')
 
 % Check if model is simulated
 if isempty(model.simulationData)
@@ -34,7 +33,7 @@ y_GDF = model.simulationData.yfull_GDF;
 u_DKF = model.simulationData.ufull_DKF;
 u_GDF = model.simulationData.ufull_GDF;
 
-nPatches = length(modelSettings.sElements)/modelSettings.nsElementsP;
+nPatches = length(model.modelSettings.patches);
 nAcc = length(modelSettings.Acc);
 t = 0:simulationSettings.dt:simulationSettings.T;
 dfull = [Phi, zeros(numNodes*2,Nmodes);         % full states in d space

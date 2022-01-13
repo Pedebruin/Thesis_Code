@@ -7,7 +7,7 @@ L = modelSettings.L;
 
 % Get element lengths! (Function at the bottom)
 [Ls,sElements] = getLengths(modelSettings,sBeam);   % Vector with for every element its length, and which elements are smart
-modelSettings.sElements = find(sElements);          % Which elements are smart?
+modelSettings.sElements = sElements;          % Which elements are smart?
 
 % Find accelerometer locations
 accHeights = L*modelSettings.Acc;
@@ -27,7 +27,8 @@ for i = 1:nAcc
     accPos(i,2)= eta;
     accPos(i,3)= i;
 end
-modelSettings.accElements = accPos;                 % Where are the accelerometers placed?
+
+modelSettings.accElements = accPos;                 % Which elements have Accelerometers?
 
 % Assembly
 numEl = length(Ls); modelSettings.numEl = numEl;
@@ -47,9 +48,11 @@ for i = 1:numEl
     n1 = i;     % Starting node
     n2 = i+1;   % Ending node
   
-    if sum(ismember(modelSettings.sElements,i)) > 0 % Is smart element?
+    if any(ismember(modelSettings.sElements,i),'all')     % Is smart element?
         El = copy(sBeam);                           % Inherit all smart element parameters
-        El.sBeam = true;                            % Tell it its a smart element
+        El.sBeam = true;                            % Tell it it's a smart element
+        El.piezoNumber = find(any(ismember(modelSettings.sElements,i)));
+        El.piezoElements = modelSettings.sElements(:,El.piezoNumber)';
     else                                            % Or normal beam element?
         El = copy(Beam);                            % Inherit regular beam element parameters
     end
@@ -146,8 +149,6 @@ I = (Beam.h^3)/12;
 S = Beam.h;         
 lambda = 1.87510407;
 analyticalf1 = lambda^2/(2*pi*L^2)*sqrt(Beam.E*I/(Beam.rho*S));
-
-delta = 1*L^3/(3*Beam.E*I);
   
 if abs(f(1) - analyticalf1) > 0.001 && nPatches == 0 && nAcc == 0 % Check only when there are no patches
     % Is only checked if there are no patches or accelerometers present!
@@ -385,6 +386,9 @@ function [Ls,sElements] = getLengths(modelSettings,sBeam)
         Ls = ones(1,nElements)*L/nElements;
         sElements = [];
     end
+
+    sElements = find(sElements);
+    sElements = reshape(sElements,modelSettings.nsElementsP,[]);
 end
 
 % Compute analytical integrals for paper. 

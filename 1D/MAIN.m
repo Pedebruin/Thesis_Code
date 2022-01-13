@@ -49,17 +49,17 @@ patchL = 50e-3; % Patch length
 
 % Model settings%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Smart patches (Piezo)
-    modelSettings.patches = [0,0.5,0.8];                             % location of start of patches (y/L)
+    modelSettings.patches = [0];                             % location of start of patches (y/L)
     modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
     modelSettings.LbElements = 0.1;                         % Preferred length of beam elements (y/L) (will change slightly)
-    modelSettings.patchCov = 0.01;                          % True covariance of patch measurement
+    modelSettings.patchCov = 1e-3;                          % True covariance of patch measurement
 
 % Accelerometers
-    modelSettings.Acc = [0.75,1];                        % Location of accelerometers
+    modelSettings.Acc = [0.5,1];                        % Location of accelerometers
     modelSettings.mAcc = 0.01;                              % Mass of accelerometers
     modelSettings.accCov = 0.1;%10;                             % True covariance of accelerometer measurement
 
-% Strain patches (TODO)
+% Strain gauges (TODO)
 
 % Modelling 
     modelSettings.Nmodes = 5;                              % Number of modes to be modelled (Can't be larger then the amount of nodes)
@@ -99,9 +99,12 @@ simulationSettings.simulate = true;                     % Simulate at all?
             simulationSettings.randInt = [-1,1];        % random input interval (uniformly distributed)
     
     % Observer settings (Settings for the observers) 
-    simulationSettings.observer = ["MF" "AKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"]
+    simulationSettings.observer = ["AKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
         simulationSettings.obsOffset = 1e-5;                % Initial state offset (we know its undeformed at the beginning, so probably 0); 
         
+        % MF settings
+            % The modal filter does not require any settings!
+
         % LO settings
         LO.poleMovement = 5e-3;                         % 0.5% faster poles
 
@@ -111,10 +114,10 @@ simulationSettings.simulate = true;                     % Simulate at all?
         KF.RTune = 1;
 
         % AKF settings
-        AKF.stationary = false;                         % Use stationary AKF?
+        AKF.stationary = true;                         % Use stationary AKF?
         AKF.derivativeOrder = 0;                        % Higher order derivative? (0:CP, 1:CV, 2:CA)
         AKF.QTune = 1;                                  % Process noise covariance tuning
-        AKF.QuTune = 1e6;                               % Input sequence covariance tuning parameter
+        AKF.QuTune = 1e2;                               % Input sequence covariance tuning parameter
         AKF.RTune = 1;                                  % Measurement noise covariance tuning
 
         %{
@@ -136,17 +139,19 @@ simulationSettings.simulate = true;                     % Simulate at all?
         GDF.RTune = 1;
 
 % plotSettings (Governs how the results are plotted!)%%%%%%%%%%%%%%%%%%%%%%
-plotSettings.plot = true;                           % Plot the simulation?
+plotSettings.plot = true;                                   % Plot the simulation?
     plotSettings.plotNodes = true;                          % Plot the nodes
-        plotSettings.nodeNumbers = true;                   % Plot the node numbers
-    plotSettings.elementNumbers = false;                     % Plot the element numbers
+        plotSettings.nodeNumbers = true;                    % Plot the node numbers
+    plotSettings.elementNumbers = false;                    % Plot the element numbers
+    plotSettings.piezos = true;                             % Plot the piezo elements
+        plotSettings.piezoNumbers = true;                   % Give them numbers
     plotSettings.sensor = true;                             % Plot the sensor in beam plot (red line)
     plotSettings.Input = true;                              % Plot given force input in the sensor plot
     plotSettings.accelerometers = true;                     % Plot accelerometers?
-        plotSettings.accNumbers = true;             % Plot acceleromter numbers?
+        plotSettings.accNumbers = true;                     % Plot acceleromter numbers?
 
-    plotSettings.statePlot = true;                  % Plot the state evolutions
-        plotSettings.states = 5;                     % First # states to be plotted
+    plotSettings.statePlot = true;                          % Plot the state evolutions
+        plotSettings.states = 5;                            % First # states to be plotted
 
 % beam element parameters (This is a beam element)
 Beam = element('Beam');
@@ -202,7 +207,7 @@ SYS_obs = model('Erroneous beam model');
 % debugging the code. 
 
 if simulationSettings.simulate ==  true
-    fprintf(['Setting up simulation...\n'...
+    fprintf(['\n Setting up simulation...\n'...
             '    Noise: %d\n'...
             '    Offset: %1.1e\n'...
             '    Model Error: %d\n'],simulationSettings.noise,simulationSettings.obsOffset,simulationSettings.modelError);
@@ -300,7 +305,7 @@ if simulationSettings.simulate ==  true
     
         if AKF.stationary == true
             % Find stationary kalman gain by solving discrete algebraic ricatti equation
-            % (p.162 M.Verhaegen
+            % (p.162 M.Verhaegen)
             if nd_AKF > 0 || nu > 1
                 error('Ricatti does not work for this augmented system.. (Already in backlog, working on it)')
             end
@@ -408,7 +413,7 @@ if simulationSettings.simulate ==  true
             '    Time steps: %d \n'],simulationSettings.T, simulationSettings.dt, length(t))
    
     % Simulation loop!!!! Here, the system is propagated.%%%%%%%%%%%%%%%%%%
-    fprintf('Simulating...\n')
+    fprintf('\n Simulating...\n')
     startTime = tic;
     for i = 1:T/dt+1
         % Shift one time step
@@ -614,11 +619,14 @@ if simulationSettings.simulate ==  true
 
     % Make a nice plot of the simulation!
     if plotSettings.plot == true
-       plots = plotter(dSYS_sim);
+        fprintf('\n Plotting simulation... \n')
+        plots = plotter(dSYS_sim);
     end
 end
 
 scriptElapsed = toc(startScript);
+
+
 fprintf('DONE!!  in %2.2f Seconds! \n',scriptElapsed)
 
 %% FUNCTIONS!!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

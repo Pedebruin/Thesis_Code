@@ -6,6 +6,8 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
         neighbours;                         % Neighbouring nodes
                 
         sBeam = false;                      % Switch to know if it is a smart element
+            piezoNumber;                    % If it is a piezo, which number does it have
+            piezoElements;                  % Which other elements are in this piezo?
         Acc = false;                        % Switch to know if it has an accelerometer
         
         N;                                  % Number of interpolation points (for plotting)
@@ -116,14 +118,18 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
            for i = 1:10
                x(i) = obj.interp(eta(i));
            end
-           
-           if obj.sBeam == true
-               color = [0.8500 0.3250 0.0980];
-           else
-               color = [0 0.4470 0.7410];
+           if plotSettings.piezos == true
+               if obj.sBeam == true
+                   color = [0.8500 0.3250 0.0980];             
+               else
+                   color = [0 0.4470 0.7410];
+               end
            end
-          bplot = plot(ax,x,y,'Color',color,'LineWidth',2);
+
+           bplot = plot(ax,x,y,'Color',color,'LineWidth',2);
            p = bplot;
+
+
 
            % Plot nodes
            if plotSettings.plotNodes == true
@@ -135,7 +141,7 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
                    p = [p,ntext];
                end
            end
-           
+
            % Plot element numbers
            if plotSettings.elementNumbers == true   
                if obj.sBeam == false
@@ -143,6 +149,17 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
                end
                etext = text(ax,mean(x)+0.01,mean(y),num2str(obj.number),'horizontalAlignment','left','Color',color);
                p = [p,etext];
+           end
+
+           % Plot piezo number
+           if plotSettings.piezoNumbers == true
+               if obj.sBeam == true
+                   if obj.number == obj.piezoElements(1) % If first element of piezo
+                       ty = length(obj.piezoElements)*obj.L/2+obj.pos(2,1);
+                       ptext = text(ax,mean(x)-0.02,ty,num2str(obj.piezoNumber),'horizontalAlignment','right','Color',color);
+                       p = [p,ptext];
+                   end
+               end
            end
 
            % Plot acceleromters
@@ -157,7 +174,7 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
                                             'Color',[0.4660 0.6740 0.1880]);
                        p = [p,acc];
 
-                       % Accelerometer num
+                       % Accelerometer number
                        if plotSettings.accNumbers == true
                           atext = text(ax,accx-0.01,accy,num2str(obj.accNumber(i)),'horizontalAlignment','right','Color',[0.4660 0.6740 0.1880]);
                           p = [p,atext];
