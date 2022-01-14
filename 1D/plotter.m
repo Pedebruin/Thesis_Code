@@ -8,11 +8,6 @@ end
 
 % Unpacking and defining for readability
 L =         model.modelSettings.L;  
-numEl =     model.numEl;
-numNodes =  model.numNodes;
-Nmodes =    model.modelSettings.Nmodes;
-Phi =       model.Phi;
-elements =  model.elements;
 sys =       model.sys;          
 
 simulationSettings =    model.simulationSettings;
@@ -36,8 +31,7 @@ u_GDF = model.simulationData.ufull_GDF;
 nPatches = length(model.modelSettings.patches);
 nAcc = length(modelSettings.Acc);
 t = 0:simulationSettings.dt:simulationSettings.T;
-dfull = [Phi, zeros(numNodes*2,Nmodes);         % full states in d space
-        zeros(numNodes*2,Nmodes),Phi]*qfull;
+
 
 % Setting up figure
 a = figure('Name','Simulation results');
@@ -82,57 +76,15 @@ subplot(12,3,28:36)
 
 movegui(a,'northwest')
     
-% Plot bode
-plotoptions = bodeoptions;
-plotoptions.Title.String = '';
-plotoptions.Title.Interpreter = 'latex';
-plotoptions.XLabel.Interpreter = 'latex';
-plotoptions.YLabel.Interpreter = 'latex';
-plotoptions.XLabel.FontSize = 9;
-plotoptions.YLabel.FontSize = 9;
-plotoptions.FreqUnits = 'Hz';
-plotoptions.grid = 'on';
-plotoptions.PhaseWrapping = 'off';
-
-bodeplot(bodeAx,sys(1,1),plotoptions);
-
-% Plot analytical omega1
-xline(bodeAx,model.analyticalf1)
+%% Bode plot!
+[~] = model.sysBode(bodeAx);
 
 %% Beam plot!
-%%%------------------------------------------------------------------------
-simPlots = [];     
-i = 1;  % For now only plot initial orientation possibility to animate still there. 
 
-% update elements
-for j = 1:length(elements)
-    elements(j).update(dfull(:,i));  
-end
+simPlots = model.show(beamAx);
 
-% Delete old plot
-if ~isempty(simPlots)
-    delete(simPlots)
-end
 
-% Plot beam
-for j = 1:numEl
-    pel = elements(j).show(beamAx,plotSettings); 
-    simPlots = [simPlots,pel];
-end
-
-timeText = text(beamAx, 0,L*1.1,['T= ',num2str(round(t(i),1)),'/',num2str(t(end)),' s'],...
-                                            'HorizontalAlignment','center');
-simPlots = [simPlots, timeText];
-
-%%%------------------------------------------------------------------------
-% Plot laser
-if plotSettings.sensor == true
-    laserx = model.sys.C(1,:)*qfull(:,i);
-    laser = plot(beamAx,[beamAx.XLim(1) laserx],[1,1]*modelSettings.measurementHeight*L,'r','lineWidth',2);
-    simPlots = [simPlots, laser];
-end
-
-%% Laser plot
+%% Laser plot!
 plot(measurementAx,t,y(1,:),'k'); % Sensor
 if any(ismember(simulationSettings.observer,'MF'))
     plot(measurementAx,t,y_MF(1,:),'color',[0 0.4470 0.7410]);
@@ -251,7 +203,7 @@ if plotSettings.statePlot == true
     legend(axes(1),['True' simulationSettings.observer])
 
     %% Input plot
-    if plotSettings.Input == true
+    if plotSettings.inputSequence == true
         c = figure('Name' ,'System input sequence');
         hold on
         grid on

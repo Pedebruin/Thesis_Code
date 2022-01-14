@@ -196,22 +196,20 @@ Phi = Phi/(Phi'*M*Phi);     % Normalise w.r.t. mass matrix
 % Bmatrices
     % External input B matrix (in d coordinates)
         % Find interpolate nodes
-%         height = modelSettings.measurementHeight*L;
-%         pos = unique([elements.pos]');
-%         diff = pos-height;
-%         upperNode = find(round(diff,4)>=0,1);
-%         interpNodes = [upperNode-1,upperNode];  
-%         interpEl = upperNode-1;
-% 
-%         % local coordinate alpha
-%         alpha = height - pos(interpNodes(1));                       % alpha = eta*obj.L
-%         N = [1, alpha, alpha^2, alpha^3]*elements(interpEl).Ainv;
-%         
-%         Bext(interpNodes(1)*2-1:interpNodes(1)*2+2) = N;
-        Bext = zeros(numNodes*2,1);
-        fNode = numNodes;                                      % force Node at top right now..
-        Bext(fNode*2-1) = 1;                                % Force at last node in x direction 
+        height = modelSettings.forceHeight*L;
+        pos = unique([elements.pos]');
+        difference = pos-height;
+        upperNode = find(round(difference,4)>=0,1);
+        interpNodes = [upperNode-1,upperNode];  
+        interpEl = upperNode-1;
 
+        % local coordinate alpha
+        alpha = height - pos(interpNodes(1));                       % alpha = eta*obj.L
+        N = [1, alpha, alpha^2, alpha^3]*elements(interpEl).Ainv;
+        
+        Bext = zeros(numNodes*2,1);
+        Bext(interpNodes(1)*2-1:interpNodes(1)*2+2) = N;
+        
 % C matrices    
     % Measurement C matrix for laser measurement
         % Find interpolate nodes
@@ -271,6 +269,7 @@ SYS.elements = elements;
 SYS.analyticalf1 = analyticalf1;
 SYS.numEl = numEl;
 SYS.numNodes = numNodes;
+SYS.Nmodes = Nmodes;
 SYS.Phi = Phi;
 SYS.omega2 = omega2;
 SYS.plotSettings = plotSettings;

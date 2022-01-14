@@ -49,13 +49,13 @@ patchL = 50e-3; % Patch length
 
 % Model settings%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Smart patches (Piezo)
-    modelSettings.patches = [0];                             % location of start of patches (y/L)
+    modelSettings.patches = [0.12];                             % location of start of patches (y/L)
     modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
     modelSettings.LbElements = 0.1;                         % Preferred length of beam elements (y/L) (will change slightly)
     modelSettings.patchCov = 1e-3;                          % True covariance of patch measurement
 
 % Accelerometers
-    modelSettings.Acc = [0.5,1];                        % Location of accelerometers
+    modelSettings.Acc = [0.4,0.8,1];                        % Location of accelerometers
     modelSettings.mAcc = 0.01;                              % Mass of accelerometers
     modelSettings.accCov = 0.1;%10;                             % True covariance of accelerometer measurement
 
@@ -64,7 +64,7 @@ patchL = 50e-3; % Patch length
 % Modelling 
     modelSettings.Nmodes = 5;                              % Number of modes to be modelled (Can't be larger then the amount of nodes)
     modelSettings.measurementHeight = 1;                    % Height of the measurement
-    modelSettings.forceHeight = 0.5;                        % Height of the input force.
+    modelSettings.forceHeight = 0.1;                        % Height of the input force.
     
     modelSettings.wcov = 0;                              % Process noise covariance
     modelSettings.laserCov = 0;                          % Laser covariance                                          
@@ -94,7 +94,7 @@ simulationSettings.simulate = true;                     % Simulate at all?
             simulationSettings.impulseAmp = 2;          % Inpulse amplitude
         simulationSettings.harmonicTime = [0.1];            % Harmonic input start time ([time], [])
             simulationSettings.harmonicFreq = 1;        % Frequency of sinusoidal input ([freq], [])
-            simulationSettings.harmonicAmp = 1;         % Frequency input amplitude [Hz]
+            simulationSettings.harmonicAmp = 10;         % Frequency input amplitude [Hz]
         simulationSettings.randTime = [];               % random input start time ([time], [])
             simulationSettings.randInt = [-1,1];        % random input interval (uniformly distributed)
     
@@ -114,10 +114,10 @@ simulationSettings.simulate = true;                     % Simulate at all?
         KF.RTune = 1;
 
         % AKF settings
-        AKF.stationary = true;                         % Use stationary AKF?
+        AKF.stationary = false;                         % Use stationary AKF?
         AKF.derivativeOrder = 0;                        % Higher order derivative? (0:CP, 1:CV, 2:CA)
         AKF.QTune = 1;                                  % Process noise covariance tuning
-        AKF.QuTune = 1e2;                               % Input sequence covariance tuning parameter
+        AKF.QuTune = 1e4;                               % Input sequence covariance tuning parameter
         AKF.RTune = 1;                                  % Measurement noise covariance tuning
 
         %{
@@ -146,7 +146,8 @@ plotSettings.plot = true;                                   % Plot the simulatio
     plotSettings.piezos = true;                             % Plot the piezo elements
         plotSettings.piezoNumbers = true;                   % Give them numbers
     plotSettings.sensor = true;                             % Plot the sensor in beam plot (red line)
-    plotSettings.Input = true;                              % Plot given force input in the sensor plot
+    plotSettings.inputForce = true;                         % Plot force location in beam plot
+    plotSettings.inputSequence = true;                      % Plot input force sequence?
     plotSettings.accelerometers = true;                     % Plot accelerometers?
         plotSettings.accNumbers = true;                     % Plot acceleromter numbers?
 
@@ -620,7 +621,7 @@ if simulationSettings.simulate ==  true
     % Make a nice plot of the simulation!
     if plotSettings.plot == true
         fprintf('\n Plotting simulation... \n')
-        plots = plotter(dSYS_sim);
+        simPlots = plotter(dSYS_sim);
     end
 end
 
