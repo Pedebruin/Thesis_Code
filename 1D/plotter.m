@@ -5,10 +5,7 @@ if isempty(model.simulationData)
     warning("Model has not been simulated yet, can't plot response")
     return
 end
-
-% Unpacking and defining for readability
-L =         model.modelSettings.L;  
-sys =       model.sys;          
+L =         model.modelSettings.L;          
 
 simulationSettings =    model.simulationSettings;
 modelSettings =         model.modelSettings;
@@ -31,7 +28,6 @@ u_GDF = model.simulationData.ufull_GDF;
 nPatches = length(model.modelSettings.patches);
 nAcc = length(modelSettings.Acc);
 t = 0:simulationSettings.dt:simulationSettings.T;
-
 
 % Setting up figure
 a = figure('Name','Simulation results');
@@ -77,14 +73,16 @@ subplot(12,3,28:36)
 movegui(a,'northwest')
     
 %% Bode plot!
-[~] = model.sysBode(bodeAx);
+[~] = model.showBode(bodeAx);
 
 %% Beam plot!
+i = 1;  % For now only plot initial orientation possibility to animate still there. 
+         
+q = model.simulationData.qfull(:,i); % State to be plotted
 
-simPlots = model.show(beamAx);
+simPlots = model.showBeam(beamAx,q);
 
-
-%% Laser plot!
+%% Output measurement plot!
 plot(measurementAx,t,y(1,:),'k'); % Sensor
 if any(ismember(simulationSettings.observer,'MF'))
     plot(measurementAx,t,y_MF(1,:),'color',[0 0.4470 0.7410]);
@@ -116,6 +114,7 @@ end
 piezoAx.ColorOrder = [1 0 0; 0 1 0; 0 0 1; 0 0 0];
 piezoAx.LineStyleOrder = {'-','--'};
 
+
 %% Accelerometer plot
 if nAcc > 0                         % If there are accelerometers
     ts = ones(nAcc,1)*t;
@@ -126,7 +125,6 @@ end
 accAx.ColorOrder = [1 0 0; 0 1 0; 0 0 1; 0 0 0];
 accAx.LineStyleOrder = {'-','--'};
 
-drawnow;
 
 %% State plot
 if plotSettings.statePlot == true
@@ -201,41 +199,61 @@ if plotSettings.statePlot == true
         end
     end
     legend(axes(1),['True' simulationSettings.observer])
-
-    %% Input plot
-    if plotSettings.inputSequence == true
-        c = figure('Name' ,'System input sequence');
-        hold on
-        grid on
-        ylabel 'force Input [N]'
-        title 'System input sequence'
-        inputAx = gca;
-        xlim([0,simulationSettings.T]);
-        plot(inputAx,t,Udist,'k'); 
-
-        movegui(c,'northeast');
-
-        % Plot Augmented Kalman Filter
-        if any(ismember(simulationSettings.observer,'AKF'))
-            plot(inputAx,t,qfull_AKF(Nmodes*2+1,:),'color',[0.4940 0.1840 0.5560]);
-        end
-        
-        % Plot Dual Kalman Filter
-        if any(ismember(simulationSettings.observer,'DKF'))
-            plot(inputAx,t,u_DKF(1,:),'color',[0.3010 0.7450 0.9330]);
-        end
-
-        % Plot Giljins de Moor Filter (GDF)
-        if any(ismember(simulationSettings.observer,'GDF'))
-            plot(inputAx,t,u_GDF(1,:),'color',[0.6350 0.0780 0.1840]);
-        end
-        
-        AKFLocation = ismember(simulationSettings.observer,"AKF");
-        DKFLocation = ismember(simulationSettings.observer,"DKF");
-        GDFLocation = ismember(simulationSettings.observer,"GDF");
-        theRest = logical(AKFLocation + DKFLocation + GDFLocation);
-        legend(inputAx,['True' simulationSettings.observer(theRest)])
-    end
-    drawnow;
 end
+
+
+%% Input plot
+if plotSettings.inputSequence == true
+    c = figure('Name' ,'System input sequence');
+    hold on
+    grid on
+    ylabel 'force Input [N]'
+    title 'System input sequence'
+    inputAx = gca;
+    xlim([0,simulationSettings.T]);
+    plot(inputAx,t,Udist,'k'); 
+
+    movegui(c,'northeast');
+
+    % Plot Augmented Kalman Filter
+    if any(ismember(simulationSettings.observer,'AKF'))
+        plot(inputAx,t,qfull_AKF(Nmodes*2+1,:),'color',[0.4940 0.1840 0.5560]);
+    end
+    
+    % Plot Dual Kalman Filter
+    if any(ismember(simulationSettings.observer,'DKF'))
+        plot(inputAx,t,u_DKF(1,:),'color',[0.3010 0.7450 0.9330]);
+    end
+
+    % Plot Giljins de Moor Filter (GDF)
+    if any(ismember(simulationSettings.observer,'GDF'))
+        plot(inputAx,t,u_GDF(1,:),'color',[0.6350 0.0780 0.1840]);
+    end
+    
+    AKFLocation = ismember(simulationSettings.observer,"AKF");
+    DKFLocation = ismember(simulationSettings.observer,"DKF");
+    GDFLocation = ismember(simulationSettings.observer,"GDF");
+    theRest = logical(AKFLocation + DKFLocation + GDFLocation);
+    legend(inputAx,['True' simulationSettings.observer(theRest)])
+end
+
+%% Mode shape plot
+if plotSettings.modes > 0
+    d = figure('Name',['Mode Shapes']);
+    sgtitle('Mode shapes')
+    for i = 1:plotSettings.modes
+        subplot(1,plotSettings.modes,i)
+            hold on
+            grid on
+            xlabel 'm'
+            ylabel 'm'
+            axis equal
+            xlim([-L/6,L/6]);
+            ylim([0,1.2*L])
+            title(['Mode ',num2str(i)])
+            simPlots = model.showMode(gca,i);
+    end
+    movegui(d,"southwest");
+end
+drawnow;
 end

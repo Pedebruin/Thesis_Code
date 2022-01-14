@@ -49,16 +49,26 @@ patchL = 50e-3; % Patch length
 
 % Model settings%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Smart patches (Piezo)
-    modelSettings.patches = [0.12];                             % location of start of patches (y/L)
+    modelSettings.patches = [0.11];                             % location of start of patches (y/L)
     modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
     modelSettings.LbElements = 0.1;                         % Preferred length of beam elements (y/L) (will change slightly)
-    modelSettings.patchCov = 1e-3;                          % True covariance of patch measurement
+    modelSettings.patchCov = 1e-8;                          % True covariance of patch measurement
+    modelSettings.strainRate = false;                        % Measure strain rate instead of strain. 
+
+    %{
+        patchCov    low noise: 1e-8
+                    high noise: 1e-6
+    %}
 
 % Accelerometers
-    modelSettings.Acc = [0.4,0.8,1];                        % Location of accelerometers
-    modelSettings.mAcc = 0.01;                              % Mass of accelerometers
-    modelSettings.accCov = 0.1;%10;                             % True covariance of accelerometer measurement
+    modelSettings.Acc = [0.95,0.1];                        % Location of accelerometers
+    modelSettings.mAcc = 0.005;                              % Mass of accelerometers
+    modelSettings.accCov = 0.1;                             % True covariance of accelerometer measurement
 
+    %{
+        accCov      low noise: 0.1
+                    high noise: 10
+    %}
 % Strain gauges (TODO)
 
 % Modelling 
@@ -88,11 +98,11 @@ simulationSettings.simulate = true;                     % Simulate at all?
     
     % Input settings (Settings for the input that is used)
     simulationSettings.distInput = 1;                   % Which input is the disturbance?
-        simulationSettings.stepTime = [];               % Location of input step ([start time], [endtime], [] )
-            simulationSettings.stepAmp = 1;             % Step amplitude
+        simulationSettings.stepTime = [0.5,1];               % Location of input step ([start time], [endtime], [] )
+            simulationSettings.stepAmp = 5;             % Step amplitude
         simulationSettings.impulseTime = [];            % Location of input impulse ([time], [])
-            simulationSettings.impulseAmp = 2;          % Inpulse amplitude
-        simulationSettings.harmonicTime = [0.1];            % Harmonic input start time ([time], [])
+            simulationSettings.impulseAmp = 10;          % Inpulse amplitude
+        simulationSettings.harmonicTime = [];            % Harmonic input start time ([time], [])
             simulationSettings.harmonicFreq = 1;        % Frequency of sinusoidal input ([freq], [])
             simulationSettings.harmonicAmp = 10;         % Frequency input amplitude [Hz]
         simulationSettings.randTime = [];               % random input start time ([time], [])
@@ -114,18 +124,15 @@ simulationSettings.simulate = true;                     % Simulate at all?
         KF.RTune = 1;
 
         % AKF settings
-        AKF.stationary = false;                         % Use stationary AKF?
+        AKF.stationary = false;                         % Use stationary AKF? (DOES NOT WORK YET)
         AKF.derivativeOrder = 0;                        % Higher order derivative? (0:CP, 1:CV, 2:CA)
         AKF.QTune = 1;                                  % Process noise covariance tuning
-        AKF.QuTune = 1e4;                               % Input sequence covariance tuning parameter
+        AKF.QuTune = 5e3;                               % Input sequence covariance tuning parameter
         AKF.RTune = 1;                                  % Measurement noise covariance tuning
 
         %{
-            CP: QuTune ~ 5e3            (Normal Random Walk)
-            CV: QuTune ~ 1e4 Patch
-                QuTune ~ [] No Patch
-            CA: QuTune ~ 1e6 Patch
-                QuTune ~ [] No Patch
+            QuTune Patch:
+            QuTune No Patch: 
         %}
 
         % DKF settings
@@ -153,6 +160,9 @@ plotSettings.plot = true;                                   % Plot the simulatio
 
     plotSettings.statePlot = true;                          % Plot the state evolutions
         plotSettings.states = 5;                            % First # states to be plotted
+
+    plotSettings.modes = 0;                                 % Plot the mode shapes?? [number of modes]
+        plotSettings.modeAmp = 5e-3;                        % Amplification factor for plot. 
 
 % beam element parameters (This is a beam element)
 Beam = element('Beam');

@@ -20,9 +20,17 @@ for i = 1:nAcc
     upperNode = find(round(difference,4)>=0,1);           % below this node
     lowerNode = upperNode-1;                        % Above this node
     accElement = lowerNode;                         % This element!
+    
+    if lowerNode == 0 % If accelerometer is placed at 0. 
+        lowerNode = 1;
+        upperNode = 2;
+        accElement = 1;
+        eta = 0;
+    else
+        % Natural element coordinate (How far along this element, for integration)
+        eta = (accHeight-nodeHeights(lowerNode))/(nodeHeights(upperNode)-nodeHeights(lowerNode));
+    end
 
-    % Natural element coordinate (How far along this element, for integration)
-    eta = (accHeight-nodeHeights(lowerNode))/(nodeHeights(upperNode)-nodeHeights(lowerNode));
     accPos(i,1) = accElement;
     accPos(i,2)= eta;
     accPos(i,3)= i;
@@ -161,7 +169,7 @@ Phi = Phi/(Phi'*M*Phi);     % Normalise w.r.t. mass matrix
 % Piezo in & outputs
     % Sensor equation according to K. Aktas
     [intS,~] = shapeFunctions();
-    H = 1e6;                                        % Arbitrary gain (needs setup validation)
+    H = 1e4;                                        % Arbitrary gain (needs setup validation)
     z = sBeam.h/2+sBeam.ph;                         % Effective height
     d31 = -180e-12;                                 % Piezo coupling d
     s11 = 16.1e-12;
@@ -175,13 +183,12 @@ Phi = Phi/(Phi'*M*Phi);     % Normalise w.r.t. mass matrix
     d31 =  -180e-12;
     w = sBeam.pb;
     zbar = (sBeam.ph+sBeam.h)/2;
-    %intG = [0,-1,0,1];
     G = Ep*d31*w*zbar*intG';                  % While we're at it, check this derivation aswell!
     
     % Voltage input B matrix (in d coordinates) and output matrix C for the
     % piezo patches!
     nsElements = length(modelSettings.sElements);
-    Bg = zeros(numNodes*2,nPatches);
+    Bg = zeros(numNodes*2,nPatches); 
     Cs = zeros(nPatches,numNodes*2);
     for i = 1:nPatches
         for j = 1:nsElementsP
@@ -245,9 +252,17 @@ A = [zeros(Nmodes),eye(Nmodes);
     -omega2,-Cmodal];
 B = [zeros(Nmodes,nPatches+1);                          
     Phi'*[Bext,Bg]];                             % [Force input, Piezo inputs]
-C = [Cmeasurement*Phi, zeros(1,Nmodes);                 % Laser measurement
+
+if modelSettings.strainRate == true
+    C = [Cmeasurement*Phi, zeros(1,Nmodes);                 % Laser measurement
+        zeros(nPatches,Nmodes),Cs*Phi;                      % Piezo outputs
+        -Cacc*Phi*omega2, -Cacc*Phi*Cmodal];                % Accelerometer outputs
+else
+    C = [Cmeasurement*Phi, zeros(1,Nmodes);                 % Laser measurement
     Cs*Phi,zeros(nPatches,Nmodes);                      % Piezo outputs
     -Cacc*Phi*omega2, -Cacc*Phi*Cmodal];                % Accelerometer outputs
+end
+
 D = [zeros(nPatches+1,size(B,2));                       % No throughput laser,base and piezo measurements
     Cacc*(Phi*Phi')*[Bext,Bg]];                  % Throughput for acceleration measurements!
 
@@ -293,9 +308,9 @@ Inputs & Outputs:
 Inputs:                           Model:      Outputs:
                                ___________    | L | laser measurement 
 | F | Force                   |           |   |ps1| Piezo Sensor outputs
-|pa1| Piezo Actuator inputs   |           |   |...|
-|...|                       =>|    sys    |=> |psn|        
-|pan|                         |           |   |ac1| Accelerometer outputs  
+                              |           |   |...|
+                            =>|    sys    |=> |psn|        
+                              |           |   |ac1| Accelerometer outputs  
                               |___________|   |...|
                                               |acn|
 The amount of piezo actuators and sensors depends on the settings at the
@@ -407,7 +422,5 @@ function [intS,intG] = shapeFunctions()
     intS = int(ddshapeFunction,0,Lss);
     intG = int(dshapeFunction,0,Lss);
 end
-
-
 
 end

@@ -4,6 +4,10 @@ classdef model
         This class is made to bundle all information relating a system in
         an easy to move way. This allows for easy transfer and saving of
         different models. 
+        
+        A model object also contains some of its plotting functions like
+        the beam plot in model.showBeam() or the bode plot in
+        model.showBode().
     %}
     
     properties
@@ -37,8 +41,8 @@ classdef model
             obj.descr = descr;
         end
         
-        function simPlots = show(obj,Ax)
-        
+        %% Plot the full beam plot for a given state q (modal coordinates)
+        function simPlots = showBeam(obj,Ax,q)
             if isempty(Ax)
                 figure()
                 hold on
@@ -52,26 +56,14 @@ classdef model
                 Ax = gca;
             end
 
-            simPlots = []; 
+            simPlots = [];
 
-            i = 1;  % For now only plot initial orientation possibility to animate still there. 
-         
-            if ~isempty(obj.simulationData)
             % update elements
-                dfull = [obj.Phi, zeros(obj.numNodes*2,obj.Nmodes);         % full states in d space
-                        zeros(obj.numNodes*2,obj.Nmodes),obj.Phi]*obj.simulationData.qfull;
-                for j = 1:length(obj.elements)
-                    obj.elements(j).update(dfull(:,i));  
-                end
+            dfull = [obj.Phi, zeros(obj.numNodes*2,obj.Nmodes);         % full states in d space
+                    zeros(obj.numNodes*2,obj.Nmodes),obj.Phi]*q;
 
-                t = obj.simulationData.t;
-            else
-                error('Model needs to be simulated first!')
-            end
-
-            % Delete old plot
-            if ~isempty(simPlots)
-                delete(simPlots)
+            for j = 1:length(obj.elements)
+                obj.elements(j).update(dfull(:));  
             end
 
             % Plot beam itself
@@ -80,14 +72,9 @@ classdef model
                 simPlots = [simPlots,pel];
             end
 
-            % What time is it?
-            timeText = text(Ax, 0,obj.modelSettings.L*1.1,['T= ',num2str(round(t(i),1)),'/',num2str(t(end)),' s'],...
-                                            'HorizontalAlignment','center');
-            simPlots = [simPlots, timeText];
-
             % Plot laser in beam plot
             if obj.plotSettings.sensor == true
-                laserx = obj.sys.C(1,:)*obj.simulationData.qfull(:,i);
+                laserx = obj.sys.C(1,:)*q;
                 laser = plot(Ax,[Ax.XLim(1) laserx],[1,1]*obj.modelSettings.measurementHeight*obj.modelSettings.L,'r','lineWidth',2);
                 simPlots = [simPlots, laser];
 
@@ -100,7 +87,7 @@ classdef model
 
             % Plot input force in beam plot
             if obj.plotSettings.inputForce == true
-                forcex = obj.sys.B(:,1)'*obj.simulationData.qfull(:,i);
+                forcex = obj.sys.B(:,1)'*q;
                 forcey = obj.modelSettings.forceHeight*obj.modelSettings.L;
 
                 f1 = [forcex-obj.modelSettings.L/15,forcey];
@@ -120,7 +107,8 @@ classdef model
             end
         end
 
-        function bod = sysBode(obj,Ax)
+        %% Plot the bode plot of this model
+        function bod = showBode(obj,Ax)
             if isempty(Ax)
                 figure();
                 hold on
@@ -142,6 +130,13 @@ classdef model
 
             % Plot analytical omega1
             xline(Ax,obj.analyticalf1)
+        end
+
+        %% Plot a given mode shape
+        function modePlot = showMode(obj,Ax,n)
+            q = zeros(obj.Nmodes*2,1);
+            q(n) = obj.plotSettings.modeAmp*1;
+            modePlot = obj.showBeam(Ax,q);
         end
     end
 end
