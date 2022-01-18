@@ -308,6 +308,45 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
             obj.simulationData.ufull_GDF = ufull_GDF;
         end
         
+        %% Evaluate the simulated response
+        function [fits] = evaluateSimulation(obj,filters)
+            y_true =  obj.simulationData.yfull(1,:);
+            fits = zeros(length(filters),1);
+            i = 1;
+
+            Method = 'NRMSE';
+
+            if any(ismember(filters,'MF'))
+                y_MF = obj.simulationData.yfull_MF(1,:);
+                fits(i) = goodnessOfFit(y_MF',y_true',Method);
+                i = i+1;
+            end
+            if any(ismember(filters,'LO'))
+                y_LO = obj.simulationData.yfull_LO(1,:);
+                fits(i) = goodnessOfFit(y_LO',y_true',Method);
+                i = i+1;
+            end
+            if any(ismember(filters,'KF'))
+                y_KF = obj.simulationData.yfull_KF(1,:);
+                fits(i) = goodnessOfFit(y_KF',y_true',Method);                
+                i = i+1;
+            end
+            if any(ismember(filters,'AKF'))
+                y_AKF = obj.simulationData.yfull_AKF(1,:);
+                fits(i) = goodnessOfFit(y_AKF',y_true',Method);
+                i = i+1;
+            end
+            if any(ismember(filters,'DKF'))
+                y_DKF = obj.simulationData.yfull_DKF(1,:);
+                fits(i) = goodnessOfFit(y_DKF',y_true',Method);
+                i = i+1;
+            end
+            if any(ismember(filters,'GDF'))
+                y_GDF = obj.simulationData.yfull_GDF(1,:);
+                fits(i) = goodnessOfFit(y_GDF',y_true',Method);                
+                i = i+1;
+            end
+        end
         %% Plot the full beam plot for a given state q (modal coordinates)
         function simPlots = showBeam(obj,Ax,q)
             if isempty(Ax)

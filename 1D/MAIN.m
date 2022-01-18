@@ -49,18 +49,20 @@ patchL = 50e-3; % Patch length
 
 % Model settings%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Smart patches (Piezo)
-    modelSettings.patches = [0.8];                             % location of start of patches (y/L)
+    modelSettings.patches = [0.8];                          % location of start of patches (y/L)
     modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
     modelSettings.LbElements = 0.1;                         % Preferred length of beam elements (y/L) (will change slightly)
-    modelSettings.strainRate = false;                        % Measure strain rate instead of strain. 
-    modelSettings.patchCov = log10(1e2);                          % True covariance of patch measurement (log10)
-        modelSettings.minPatchCov = -10;                   % Only when multiple models are simulated (log10)
+    modelSettings.strainRate = false;                       % Measure strain rate instead of strain. 
+    modelSettings.patchCov = log10(1e-2);                    % True covariance of patch measurement (log10)
+        modelSettings.maxPatchCov = 2;                      % Only when multiple models are simulated (log10)
+        modelSettings.minPatchCov = -10;                    % Only when multiple models are simulated (log10)
 
 % Accelerometers
     modelSettings.Acc = [0.95,0.8,0.2];                        % Location of accelerometers
     modelSettings.mAcc = 0.005;                              % Mass of accelerometers
-    modelSettings.accCov = log10(1e2);                             % True covariance of accelerometer measurement
-        modelSettings.minAccCov = -10;
+    modelSettings.accCov = log10(1e-2);                             % True covariance of accelerometer measurement
+        modelSettings.maxAccCov = 1;                      % Only when multiple models are simulated (log10)
+        modelSettings.minAccCov = -10;                      % Only when multiple model sare simulated (log10)
 
 % Strain gauges (TODO)
 
@@ -81,7 +83,6 @@ patchL = 50e-3; % Patch length
 
 % simulationSettings (Settings for the simulation)%%%%%%%%%%%%%%%%%%%%%%%%%
 simulationSettings.simulate = true;                     % Simulate at all?
-    simulationSettings.metaAnalysis = 'Both';            % 'Acc','Patch', 'Both' or 'None'
     simulationSettings.waitBar = false;                      % Give waitbar and cancel option (VERY SLOW)
     
     % Turn on and off all errors!
@@ -106,14 +107,15 @@ simulationSettings.simulate = true;                     % Simulate at all?
             simulationSettings.randInt = [-1,1];        % random input interval (uniformly distributed)
     
     % Batch run settings
-    simulationSettings.batch = true;                    % Run simulation in batch?? (A lot of times)
-        simulationSettings.nPatchCov = 10;                  % How many data points between patchCov and minPatchCov?
-        simulationSettings.nAccCov = 10;                    % How many data points between accCov and minaccCov?
-        simulationSettings.nDerivatives = 0;                % Number of derivatives?  
+    simulationSettings.batch = false;                    % Run simulation in batch?? (A lot of times)
+        simulationSettings.batchMode = 'Acc';            % 'Acc','Patch', 'Both' or 'None'
+        simulationSettings.nPatchCov = 3;                  % How many data points between patchCov and minPatchCov?
+        simulationSettings.nAccCov = 3;                    % How many data points between accCov and minaccCov?
+        simulationSettings.nDerivatives = 1;               % Highest derivative order? (Also does all lower derivatives) 
     
     % Observer settings (Settings for the observers) 
     simulationSettings.observer = ["AKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
-        simulationSettings.obsOffset = 1e-5;                % Initial state offset (we know its undeformed at the beginning, so probably 0); 
+        simulationSettings.obsOffset = 1e-5;               % Initial state offset (we know its undeformed at the beginning, so probably 0); 
         
         % MF settings
 
@@ -129,8 +131,12 @@ simulationSettings.simulate = true;                     % Simulate at all?
         AKF.stationary = false;                         % Use stationary AKF? (DOES NOT WORK YET)
         AKF.derivativeOrder = 0;                        % Higher order derivative? (0:CP, 1:CV, 2:CA)
         AKF.QTune = 1;                                  % Process noise covariance tuning
-        AKF.QuTune = 1e1;                               % Input sequence covariance tuning parameter
         AKF.RTune = 1;                                  % Measurement noise covariance tuning
+
+        AKF.QuTuned0 = 1e2;                         % For the first derivative 
+        AKF.QuTuned1 = 1e4;                         % For the first derivative
+        AKF.QuTuned2 = 1e6;                        % For the second derivative
+
 
         %{
             QuTune Patch:
@@ -200,9 +206,10 @@ if simulationSettings.batch == false
     simulationSettings.nPatchCov = 1;                  % Reset to 1
     simulationSettings.nAccCov = 1;                    % Reset to 1
     simulationSettings.nDerivatives = 0;               % Reset to 0
+    simulationSettings.batchMode = 'None';              % Choose correct covariances!
 end
 
-switch simulationSettings.metaAnalysis
+switch simulationSettings.batchMode
     case {'Patch'}
         modelMat = model(simulationSettings.nPatchCov,1,simulationSettings.nDerivatives+1);
         simulationSettings.nAccCov = 1;
@@ -224,16 +231,16 @@ nsElementsP = modelSettings.nsElementsP;            % Number of elements per pat
 nAcc = length(modelSettings.Acc);                   % Number of accelerometers
 
 % generate meta analysis vector
-switch simulationSettings.metaAnalysis
+switch simulationSettings.batchMode
     case {'Patch'}
-        patchCovariances = logspace(modelSettings.minPatchCov,modelSettings.patchCov,simulationSettings.nPatchCov);
+        patchCovariances = logspace(modelSettings.minPatchCov,modelSettings.maxPatchCov,simulationSettings.nPatchCov);
         patchCovariances = flip(patchCovariances);
     case {'Acc'}
-        accCovariances = logspace(modelSettings.minAccCov,modelSettings.accCov,simulationSettings.nAccCov);
+        accCovariances = logspace(modelSettings.minAccCov,modelSettings.maxAccCov,simulationSettings.nAccCov);
         accCovariances = flip(accCovariances);
     case{'Both'}
-        patchCovariances = logspace(modelSettings.minPatchCov,modelSettings.patchCov,simulationSettings.nPatchCov);
-        accCovariances = logspace(modelSettings.minAccCov,modelSettings.accCov,simulationSettings.nAccCov);
+        patchCovariances = logspace(modelSettings.minPatchCov,modelSettings.maxPatchCov,simulationSettings.nPatchCov);
+        accCovariances = logspace(modelSettings.minAccCov,modelSettings.maxAccCov,simulationSettings.nAccCov);
     case{'None'}
         patchCovariances = 10^modelSettings.patchCov;
         accCovariances = 10^modelSettings.accCov;
@@ -252,7 +259,7 @@ for i = 1:simulationSettings.nPatchCov
         mSettings = modelSettings;  % Copy of modelSettings to avoid overwriting the real thing. 
        
         % Vary covariance of either patch or acc
-        switch simulationSettings.metaAnalysis
+        switch simulationSettings.batchMode
             case {'Patch'}
                 mSettings.patchCov = patchCovariances(i);
                 mSettings.accCov = 10^mSettings.accCov;
@@ -341,7 +348,7 @@ if simulationSettings.simulate ==  true
     % Set up filters and simulate multiple times!
     l = 1;
     for i = 1:simulationSettings.nPatchCov
-        for j = 1:simulationSettings.nPatchCov
+        for j = 1:simulationSettings.nAccCov
             for k = 1:simulationSettings.nDerivatives+1
                 SYS = modelMat(i,j,k); % Pick model to simulate
         
@@ -394,7 +401,23 @@ if simulationSettings.simulate ==  true
                 AKF.nd = AKF.derivativeOrder;
                 if any(ismember(simulationSettings.observer,"AKF"))
                     % q -> [q;qd;u] ->nq+nu*nd
-                    AKF.nd = k-1; % Change every loop!
+
+                    % OverWrite derivativeOrder!
+                    if simulationSettings.batch == true
+                        AKF.nd = k-1; % Change every loop!
+                    end
+
+                    switch AKF.nd
+                        case 0
+                            % Use zeroth derivative tuning parameter
+                            AKF.QuTune = AKF.QuTuned0;
+                        case 1
+                            % Use another tuning parameter
+                            AKF.QuTune = AKF.QuTuned1;
+                        case 2
+                            % Use yet another tuning parameter
+                            AKF.QuTune = AKF.QuTuned2;
+                    end
 
                     AKF.S = [SYS.S(:,2:end); zeros(SYS.nu*(AKF.nd+1),SYS.ny-1)];
             
@@ -440,7 +463,8 @@ if simulationSettings.simulate ==  true
                     if l == 1
                         fprintf(['    Augmented Kalman Filter-> \n'...
                                  '        Stationary: %d \n'...
-                                 '        QuTune: %1.1e \n'],AKF.stationary,AKF.QuTune)
+                                 '        QuTune: %1.1e \n'...
+                                 '        nd: %d\n '],AKF.stationary,AKF.QuTune,AKF.nd)
                     end
                 end
             
@@ -520,51 +544,69 @@ if simulationSettings.nModels > 1
     % save('patchAccCovBIG','modelMat')
 
     % RMSE
-    fits = zeros(simulationSettings.nPatchCov,simulationSettings.nAccCov);
-    y_true =  modelMat(1).simulationData.yfull(1,:); % They all have the same true simulation
-
-    for i = 1:simulationSettings.nPatchCov
+    fits = zeros(simulationSettings.nPatchCov,simulationSettings.nAccCov,simulationSettings.nDerivatives);
+     for i = 1:simulationSettings.nPatchCov
         for j = 1:simulationSettings.nAccCov
-            y_AKF = modelMat(i,j).simulationData.yfull_AKF(1,:);
-            fits(i,j) = goodnessOfFit(y_AKF',y_true','NRMSE');
+            for k = 1:simulationSettings.nDerivatives+1
+                fits(i,j,k) = modelMat(i,j,k).evaluateSimulation("AKF");
+            end
         end
     end
     
-    switch simulationSettings.metaAnalysis
-        case {'Patch'}
-            d = figure('Name','RMSE for increasing patch covariances');
-            semilogx(patchCovariances,fits,'-o')
-            hold on
-            title 'Patch covariance Vs estimation fit'
-            grid on
-            xlabel('Patch covariance $[V^2]$')
-            ylabel('NRMSE [-]')
-        case {'Acc'}
-            d = figure('Name','RMSE for increasing accelerometer covariances');
-            semilogx(accCovariances,fits,'-o')
-            hold on
-            title 'Acc covariance Vs estimation fit'
-            grid on
-            xlabel('Accelerometer covariance $[(m/s^2)^2]$')
-            ylabel('NRMSE [-]')
-        case {'Both'}
-            d = figure('Name','RMSE analysis');
-            surf(patchCovariances,accCovariances,fits)
-            hold on
-            title 'Acc covariance Vs Patch covariance'
-            grid on
-            xlabel('Patch covariance')
-            ylabel('Accelerometer covariance')
-            zlabel('RMSE of output')
+    d = [];
+    for k = 1:simulationSettings.nDerivatives+1
+                switch simulationSettings.batchMode
+            case {'Patch'}
+                if isempty(d)
+                    d = figure('Name','RMSE for increasing patch covariances');
+                    hold on
+                    title 'Patch covariance Vs estimation fit'
+                    grid on
+                    xlabel('Patch covariance $[V^2]$')
+                    ylabel('NRMSE [-]')
+                    patchAx = gca;
+                    set(patchAx,'xScale','log')
+                end
+                semilogx(patchAx,patchCovariances,fits(:,1,k),'-o')
 
-            set(gca,'XScale','log')
-            set(gca,'YScale','log')
+            case {'Acc'}
+                if isempty(d)
+                    d = figure('Name','RMSE for increasing accelerometer covariances');
+                    hold on
+                    title 'Acc covariance Vs estimation fit'
+                    grid on
+                    xlabel('Accelerometer covariance $[(m/s^2)^2]$')
+                    ylabel('NRMSE [-]')
+                    accAx = gca;
+                    set(accAx,'xScale','log')
+                end
+                semilogx(accAx,accCovariances,fits(1,:,k),'-o')
+
+            case {'Both'}
+                if isempty(d)
+                d = figure('Name','RMSE analysis');
+                hold on
+                title 'Acc covariance Vs Patch covariance'
+                grid on
+                xlabel('Patch covariance')
+                ylabel('Accelerometer covariance')
+                zlabel('RMSE of output')
+                surfAx = gca;
+                set(surfAx,'XScale','log')
+                set(surfAx,'YScale','log')
+                
+                end
+                surf(surfAx,patchCovariances,accCovariances,fits(:,:,k))
+        end
+        movegui(d,"south")
     end
-    movegui(d,"south")
+    derivativeNames = ["0th order" "1st order" "2nd order" "3rd order" "4th order"];
+    legend(d.Children,derivativeNames(1:simulationSettings.nDerivatives+1))
+
 end
 
+% That's it, just some closing remarks. 
 scriptElapsed = toc(startScript);
-
 fprintf('DONE!!  in %2.2f Seconds! \n',scriptElapsed)
 
 %% FUNCTIONS!!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
