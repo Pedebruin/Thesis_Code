@@ -1,4 +1,4 @@
-classdef model
+classdef model < handle & dynamicprops & matlab.mixin.Copyable
     % a 'model' contains all information on a model
     %{
         This class is made to bundle all information relating a system in
@@ -11,6 +11,8 @@ classdef model
     %}
     
     properties
+        name;                   % Model name
+        number;
         descr;                  % description of this system
         elements;               % Elements of the system in current orientation
 
@@ -33,12 +35,277 @@ classdef model
         Bw;                     % Process noise influence matrix
         Dv;                     % Measurement noise influence matrix
 
+        ny;                     % Number of outputs (Total)
+        nu;                     % Number of inputs 
+        nq;                     % Number of states
+
         sys;                    % Actual state space system!
+        dsys_sim;               % discrete time ss model for simulation
+        dsys_obs;               % discrete tyme ss model for observers
     end
     
     methods
-        function obj = model(descr)
-            obj.descr = descr;
+        %% Constructor
+        function obj = model(m,n,z)
+             if nargin ~= 0
+                obj(m,n,z) = obj;
+             end
+         end
+
+        %% Simulate the beam model
+        function obj = simulate(obj,MF,LO,KF,AKF,DKF,GDF,Udist)
+           
+            % Handy defenitions & Unpacking
+            T = obj.simulationSettings.T;
+            dt = obj.simulationSettings.dt;
+            t = 0:dt:T;
+
+            % Some initialisations!!!
+            yfull = zeros(obj.ny,length(t));            % System output
+            yfull_MF = zeros(obj.ny,length(t));
+            yfull_LO = zeros(obj.ny,length(t)); 
+            yfull_KF = zeros(obj.ny,length(t));
+            yfull_AKF = zeros(obj.ny,length(t));
+            yfull_DKF = zeros(obj.ny,length(t));
+            yfull_GDF = zeros(obj.ny,length(t));
+        
+            U = zeros(obj.nu,1);                                        % Input vector
+        
+            qfull = zeros(obj.nq,length(t));                            % Full state vector over time
+            qfull_MF = zeros(obj.nq,length(t));
+            qfull_LO = zeros(obj.nq,length(t));                         % Also for the observers
+            qfull_KF = zeros(obj.nq,length(t));
+            qfull_AKF = zeros(obj.nq+obj.nu*(AKF.nd+1),length(t));          % Augmented state for AKF
+            qfull_DKF = zeros(obj.nq,length(t));
+            qfull_GDF = zeros(obj.nq,length(t));
+        
+            % ufull_AKF can be found in the last two states of qfull_AKF (due tobthe augmented nature)
+            ufull_DKF = zeros(obj.nu,length(t));
+            ufull_GDF = zeros(obj.nu,length(t));
+
+            q1 = zeros(obj.nq,1);                                       % Normal time simulation    
+            q1_LO = ones(obj.nq,1)*obj.simulationSettings.obsOffset;        % Initial state estimate for LO
+            q1_KF = ones(obj.nq,1)*obj.simulationSettings.obsOffset;        % Initial state estimate for KF
+            q1_AKF = zeros(obj.nq+obj.nu*(AKF.nd+1),1);                         % Initial sate estimate for AKF 
+                q1_AKF(1:obj.nq) = ones(obj.nq,1)*obj.simulationSettings.obsOffset; % Only  beam states offset error
+            q1_DKF = ones(obj.nq,1)*obj.simulationSettings.obsOffset;       % Initial state estimate for DKF
+                u1_DKF = zeros(obj.nu,1);
+            q1_GDF = ones(obj.nq,1)*obj.simulationSettings.obsOffset;       % Initial state estimate for GDF
+        
+            P1_KF = zeros(obj.nq);                                        % Initial P matrix kalman filter
+            P1_AKF = zeros(obj.nq+obj.nu*(AKF.nd+1));
+            P1_DKF = zeros(obj.nq);
+                Pu1_DKF = zeros(obj.nu);
+            Pq1_GDF  = zeros(obj.nq);
+            
+            W = mvnrnd(zeros(obj.nq,1),obj.Q,T/dt+1)';
+            V = mvnrnd(zeros(obj.ny,1),obj.R,T/dt+1)';
+
+            fprintf(['\n Simulating %s ... \n'...
+                    '    patchCov: %1.1e \n'...
+                    '    accCov: %1.1e \n'],obj.name,obj.modelSettings.patchCov,obj.modelSettings.accCov);
+            startTime = tic;
+            
+            % Simulation loop!!!! Here, the system is propagated.%%%%%%%%%%%%%%%%%%
+            for i = 1:T/dt+1
+                % Shift one time step
+                q = q1;             % Previous next state is the current state. (Yes, very deep indeed)
+                q_LO = q1_LO;       % Also for the observers
+                q_KF = q1_KF;
+                q_AKF = q1_AKF;
+                q_DKF = q1_DKF;
+                    u_DKF = u1_DKF;
+                q_GDF = q1_GDF;
+        
+                P_KF = P1_KF;
+                P_AKF = P1_AKF;
+                P_DKF = P1_DKF;
+                    Pu_DKF = Pu1_DKF;
+                Pq_GDF = Pq1_GDF;
+        
+                % Simulate system
+                    % Pick input
+                    U(obj.simulationSettings.distInput) = Udist(i);
+        
+                    % Pick noise
+                    if obj.simulationSettings.noise == true
+                        w = W(:,i);                         % mvnrnd to allow for different covariances of different sensors
+                        v = V(:,i);
+                    else
+                        w = zeros(obj.nq,1);
+                        v = zeros(obj.ny,1);
+                    end
+
+                    % Propagate discrete time dynamic system
+                    q1 = obj.dsys_sim.A*q + obj.dsys_sim.B*U + obj.Bw*w;           % Propagate dynamics
+                    y = obj.dsys_sim.C*q + obj.dsys_sim.D*U + obj.Dv*v;       % Measurement equation
+        
+                    % Also save full states for plotting (in q space, so modal)
+                    qfull(:,i) = q;
+                    yfull(:,i) = y;
+        
+                % Run state estimators
+                    % MF ----------------------------------------------------------
+                    if any(ismember(obj.simulationSettings.observer,'MF'))
+                        % Modal filter
+                        q_MF = MF.Psi*y(2:end);
+        
+                        % Save state and output
+                        qfull_MF(:,i) = q_MF;
+                        yfull_MF(:,i) = obj.dsys_sim.C*q_MF;
+                    end
+        
+                    % LO ----------------------------------------------------------
+                    if any(ismember(obj.simulationSettings.observer,'LO'))
+                        q1_LO = obj.dsys_obs.A*q_LO + obj.dsys_obs.B*U + LO.L*(y(2:end)-obj.dsys_obs.C*q_LO-obj.dsys_obs.D*U);
+                        yfull_LO(:,i) = obj.dsys_sim.C*q_LO + obj.dsys_sim.D*U; % Estimated output
+                        qfull_LO(:,i) = q_LO;       % Save estimated state
+                    end 
+        
+                    % KF ----------------------------------------------------------           
+                    if any(ismember(obj.simulationSettings.observer,'KF'))
+                        if KF.stationary == true
+                            % Steady state kalman filter (Same as LO, but with kalman gain)
+                            q1_KF = obj.dsys_obs.A*q_KF + obj.dsys_obs.B*U + KF.K*(y(2:end)-obj.dsys_obs.C*q_KF-obj.dsys_obs.D*U);
+        
+                            % Save state and output
+                            qfull_KF(:,i) = q_KF;                    
+                            yfull_KF(:,i) = dsys.C*q_KF + dsys.D*U;
+        
+                        else
+                            % Measurement update
+                            q_KF = q_KF + P_KF*obj.dsys_obs.C'/(obj.dsys_obs.C*P_KF*obj.dsys_obs.C'+KF.R)*(y(2:end)-obj.dsys_obs.C*q_KF-obj.dsys_obs.D*U);
+                            P_KF = P_KF - P_KF*obj.dsys_obs.C'/(obj.dsys_obs.C*P_KF*obj.dsys_obs.C'+KF.R)*obj.dsys_obs.C*P_KF;
+        
+                            % Time update
+                            q1_KF = obj.dsys_obs.A*q_KF + obj.dsys_obs.B*U;
+                            P1_KF = obj.dsys_obs.A*P_KF*obj.dsys_obs.A'+KF.Bw*KF.Q*KF.Bw';
+        
+                            % Save state and output
+                            qfull_KF(:,i) = q_KF;                    
+                            yfull_KF(:,i) = obj.dsys_sim.C*q_KF + obj.dsys_sim.D*U;
+        
+                        end
+                    end
+        
+                    % AKF----------------------------------------------------------
+                    if any(ismember(obj.simulationSettings.observer,'AKF'))
+                        if AKF.stationary == true
+                            % Steady state kalman filter (Same as LO, but with kalman gain)
+                            q1_AKF = AKF.A*q_AKF + AKF.K*(y(2:end,i)-AKF.C*q_AKF);
+        
+                            % Save state and output
+                            qfull_AKF(:,i) = q_AKF;                    
+                            yfull_AKF(:,i) = [dsys.C(1,:),zeros(1,obj.nu);
+                                            AKF.C]*q_AKF;                   
+                        else
+                            % Measurement update
+                            q_AKF = q_AKF + P_AKF*AKF.C'/(AKF.C*P_AKF*AKF.C'+AKF.R)*(y(2:end)-AKF.C*q_AKF);
+                            P_AKF = P_AKF - P_AKF*AKF.C'/(AKF.C*P_AKF*AKF.C'+AKF.R)*AKF.C*P_AKF;
+        
+                            % Time update
+                            q1_AKF = AKF.A*q_AKF;
+                            P1_AKF = AKF.A*P_AKF*AKF.A'+AKF.Bw*AKF.Q*AKF.Bw';
+        
+                            % Save state and output
+                            qfull_AKF(:,i) = q_AKF;                    
+                            yfull_AKF(:,i) = [obj.dsys_sim.C(1,:),zeros(1,obj.nu*(AKF.nd+1));
+                                            AKF.C]*q_AKF;
+                        end
+                    end
+        
+                    % DKF----------------------------------------------------------
+                    if any(ismember(obj.simulationSettings.observer,'DKF'))
+                        % Measurement update of INPUT estimate
+                        Ku_DKF = Pu_DKF*DKF.D'/(DKF.D*Pu_DKF*DKF.D' + DKF.R);
+        
+                        u_DKF = u_DKF + Ku_DKF*(y(2:end)-DKF.C*q_DKF-DKF.D*u_DKF);
+                        Pu_DKF = Pu_DKF - Ku_DKF*DKF.D*Pu_DKF;
+        
+                        % Measurement update STATE estimate
+                        K_DKF = P_DKF*DKF.C'/(DKF.C*P_DKF*DKF.C' + DKF.R);
+        
+                        q_DKF = q_DKF + K_DKF*(y(2:end)-DKF.C*q_DKF-DKF.D*u_DKF);
+                        P_DKF = P_DKF - K_DKF*DKF.C*P_DKF;
+        
+                        % Time update of INPUT estimate
+                        u1_DKF = u_DKF;                 % Random walk!
+                        Pu1_DKF = Pu_DKF + DKF.Qu;
+        
+                        % Time update STATE estimate
+                        q1_DKF = DKF.A*q_DKF + DKF.B*u_DKF;  % Dynamics propagation using estimated input
+                        P1_DKF = DKF.A'*P_DKF*DKF.A + DKF.Q;
+        
+                        % Save state,estimated input and output 
+                        qfull_DKF(:,i) = q_DKF;    
+                        ufull_DKF(:,i) = u_DKF;
+                        yfull_DKF(:,i) = [obj.dsys_sim.C(1,:);
+                                        DKF.C]*q_DKF; 
+                       
+                    end
+                    
+                    % GDF----------------------------------------------------------
+                    if any(ismember(obj.simulationSettings.observer,'GDF'))
+                        % Input estimation
+                        Rt_GDF = GDF.C*Pq_GDF*GDF.C' + GDF.R;
+                        M_GDF = (GDF.D'/Rt_GDF*GDF.D)\GDF.D'/Rt_GDF;
+                        u_GDF = M_GDF*(y(2:end)-GDF.C*q_GDF);
+                        Pu_GDF = eye(obj.nu)/(GDF.D'/Rt_GDF*GDF.D);
+        
+                        % Measurement update
+                        K_GDF = Pq_GDF*GDF.C'/GDF.R;
+                        q_GDF = q_GDF + K_GDF*(y(2:end)-GDF.C*q_GDF-GDF.D*u_GDF);
+                        Pq_GDF = Pq_GDF - K_GDF*(Rt_GDF - GDF.D*Pu_GDF*GDF.D')*K_GDF';
+                        Pqu_GDF = -K_GDF*GDF.D*Pu_GDF;
+        
+                        % Time update
+                        q1_GDF = GDF.A*q_GDF + GDF.B*u_GDF;
+                        Pq1_GDF = [GDF.A GDF.B]*[Pq_GDF ,Pqu_GDF; Pqu_GDF' Pu_GDF]*[GDF.A'; GDF.B'] + GDF.Q;
+        
+                        % Save state, estimated input and output
+                        qfull_GDF(:,i) = q_GDF;    
+                        ufull_GDF(:,i) = u_GDF;
+                        yfull_GDF(:,i) = [obj.dsys_sim.C(1,:);
+                                        GDF.C]*q_GDF; 
+                    end
+        
+                % Update waitbar and check cancel button
+                if obj.simulationSettings.waitBar == true
+                    waitbar(i/(T/dt+1),f,sprintf('Step %d/%d',i,T/dt+1))
+                    if getappdata(f,'canceling')
+                        break
+                    end
+                end
+            end
+            elapsed = toc(startTime);
+            fprintf('    Simulation time: %.2f s \n',elapsed)
+        
+            if obj.simulationSettings.waitBar == true
+                delete(f);
+            end
+        
+            % Save simulation data in the larger model struct. 
+            obj.simulationData.t = t;
+            obj.simulationData.Udist = Udist;
+            
+            obj.simulationData.qfull = qfull;
+            obj.simulationData.qfull_MF = qfull_MF;
+            obj.simulationData.qfull_LO = qfull_LO;
+            obj.simulationData.qfull_KF = qfull_KF;
+            obj.simulationData.qfull_AKF = qfull_AKF;
+            obj.simulationData.qfull_DKF = qfull_DKF;
+            obj.simulationData.qfull_GDF = qfull_GDF;
+        
+            obj.simulationData.yfull = yfull;
+            obj.simulationData.yfull_MF = yfull_MF;
+            obj.simulationData.yfull_LO = yfull_LO;
+            obj.simulationData.yfull_KF = yfull_KF;
+            obj.simulationData.yfull_AKF = yfull_AKF;
+            obj.simulationData.yfull_DKF = yfull_DKF;
+            obj.simulationData.yfull_GDF = yfull_GDF;
+        
+            obj.simulationData.ufull_DKF = ufull_DKF;
+            obj.simulationData.ufull_GDF = ufull_GDF;
         end
         
         %% Plot the full beam plot for a given state q (modal coordinates)
@@ -54,6 +321,8 @@ classdef model
                 ylim([0,1.2*obj.modelSettings.L])
                 title 'Beam plot'
                 Ax = gca;
+                
+                q = zeros(obj.nq,1);
             end
 
             simPlots = [];

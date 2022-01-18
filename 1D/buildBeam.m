@@ -1,4 +1,4 @@
-function [SYS,dSYS,modelSettings] = buildBeam(modelSettings,simulationSettings,plotSettings,Beam,sBeam,SYS)
+function [SYS,modelSettings] = buildBeam(modelSettings,simulationSettings,plotSettings,Beam,sBeam,SYS)
 %% Matrix setup %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 nPatches = length(modelSettings.patches);           % Number of patches
 nsElementsP = modelSettings.nsElementsP;            % Number of elements per patch
@@ -169,7 +169,7 @@ Phi = Phi/(Phi'*M*Phi);     % Normalise w.r.t. mass matrix
 % Piezo in & outputs
     % Sensor equation according to K. Aktas
     [intS,~] = shapeFunctions();
-    H = 1e4;                                        % Arbitrary gain (needs setup validation)
+    H = 1e6;                                        % Arbitrary gain (needs setup validation)
     z = sBeam.h/2+sBeam.ph;                         % Effective height
     d31 = -180e-12;                                 % Piezo coupling d
     s11 = 16.1e-12;
@@ -275,6 +275,7 @@ R = [modelSettings.laserCov,zeros(1,nPatches+nAcc);
     zeros(nAcc,1), zeros(nAcc,nPatches), eye(nAcc)*modelSettings.accCov]; 
 S = zeros(Nmodes*2,1+nPatches+nAcc);
 
+
 % Noise influence matrices Bw and Dv
 Bw = eye(Nmodes*2);
 Dv = eye(1+nPatches+nAcc);
@@ -326,9 +327,7 @@ functions.
 % To be able to simulate the system, it is discretised. 
 modelSettings.c2dMethod = 'ZOH';
 dsys = c2d(sys,simulationSettings.dt,modelSettings.c2dMethod);            % Discretise using ZOH
-dSYS = SYS;                                                 % Make new system
-dSYS.sys = dsys;
-dSYS.descr = 'Discrete time beam model';
+SYS.dsys_sim = dsys;                                                 % Make new system
 
 %% Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
