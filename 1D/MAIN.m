@@ -108,10 +108,10 @@ simulationSettings.simulate = true;                     % Simulate at all?
     
     % Batch run settings
     simulationSettings.batch = false;                    % Run simulation in batch?? (A lot of times)
-        simulationSettings.batchMode = 'Acc';            % 'Acc','Patch', 'Both' or 'None'
-        simulationSettings.nPatchCov = 3;                  % How many data points between patchCov and minPatchCov?
-        simulationSettings.nAccCov = 3;                    % How many data points between accCov and minaccCov?
-        simulationSettings.nDerivatives = 1;               % Highest derivative order? (Also does all lower derivatives) 
+        simulationSettings.batchMode = 'Both';            % 'Acc','Patch', 'Both' or 'None'
+        simulationSettings.nPatchCov = 15;                  % How many data points between patchCov and minPatchCov?
+        simulationSettings.nAccCov = 15;                    % How many data points between accCov and minaccCov?
+        simulationSettings.nDerivatives = 2;               % Highest derivative order? (Also does all lower derivatives) 
     
     % Observer settings (Settings for the observers) 
     simulationSettings.observer = ["AKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
