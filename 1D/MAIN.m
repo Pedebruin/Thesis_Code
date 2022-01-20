@@ -20,7 +20,7 @@ modelSettings.Acc.
 
 The rest of the parameters are relatively self explanatory. If you have any
 questions or find an error (very very probable) don't hesitate to send me a
-message! @ P.E.deBruin@student.tudelft.nl
+message! @ P.E.deBruin@student.tudelft.nl or 0615331950
 
 XXX Pim
 
@@ -29,6 +29,8 @@ This script requires:
     Control system toolbox (For feedback command)
     Robust Control toolbox (For Hinf command)
     Statistics and machine learning toolbox (mvnrnd command)
+    signal processing toolbox 
+    System identification toolbox (goodnessOfFit command)
 %}
 
 clear
@@ -49,7 +51,7 @@ patchL = 50e-3; % Patch length
 
 % Model settings%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Smart patches (Piezo)
-    modelSettings.patches = [0.8];                          % location of start of patches (y/L)
+    modelSettings.patches = [0.1];%[0.8];                          % location of start of patches (y/L)
     modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
     modelSettings.LbElements = 0.1;                         % Preferred length of beam elements (y/L) (will change slightly)
     modelSettings.strainRate = false;                       % Measure strain rate instead of strain. 
@@ -96,23 +98,34 @@ simulationSettings.simulate = true;                     % Simulate at all?
     
     % Input settings (Settings for the input that is used)
     simulationSettings.distInput = 1;                   % Which input is the disturbance?
-        simulationSettings.stepTime = [];               % Location of input step ([start time], [endtime], [] )
+        simulationSettings.stepTime = [0.1,1.1];               % Location of input step ([start time], [endtime], [] )
             simulationSettings.stepAmp = 5;             % Step amplitude
         simulationSettings.impulseTime = [];            % Location of input impulse ([time], [])
             simulationSettings.impulseAmp = 10;          % Inpulse amplitude
-        simulationSettings.harmonicTime = [0.1];            % Harmonic input start time ([time], [])
+        simulationSettings.harmonicTime = [];            % Harmonic input start time ([time], [])
             simulationSettings.harmonicFreq = 1;        % Frequency of sinusoidal input ([freq], [])
             simulationSettings.harmonicAmp = 10;         % Frequency input amplitude [Hz]
         simulationSettings.randTime = [];               % random input start time ([time], [])
-            simulationSettings.randInt = [-1,1];        % random input interval (uniformly distributed)
+            simulationSettings.randInt = [-10,10];        % random input interval (uniformly distributed)
     
+    %{
+        Batch mode runs the script a lot of times to analyse meta
+        results like the influence of different tuning parameters, or
+        noise on performance. The script can vary 2 quantities, the
+        'Patch' and 'Acc'elerometer covariance with batchMode (or
+        both). It can also vary the amount of derivatives that ar
+        emodelled. If nDerivatives is larger then 0, all lower
+        derivatives are also modelled. Which increases simulation time
+        significantly
+    %}
     % Batch run settings
     simulationSettings.batch = false;                    % Run simulation in batch?? (A lot of times)
-        simulationSettings.batchMode = 'Both';            % 'Acc','Patch', 'Both' or 'None'
+        simulationSettings.batchMode = 'Patch';            % 'Acc','Patch', 'Both' or 'None'
         simulationSettings.nPatchCov = 15;                  % How many data points between patchCov and minPatchCov?
         simulationSettings.nAccCov = 15;                    % How many data points between accCov and minaccCov?
         simulationSettings.nDerivatives = 2;               % Highest derivative order? (Also does all lower derivatives) 
-    
+
+
     % Observer settings (Settings for the observers) 
     simulationSettings.observer = ["AKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
         simulationSettings.obsOffset = 1e-5;               % Initial state offset (we know its undeformed at the beginning, so probably 0); 
@@ -132,15 +145,21 @@ simulationSettings.simulate = true;                     % Simulate at all?
         AKF.derivativeOrder = 0;                        % Higher order derivative? (0:CP, 1:CV, 2:CA)
         AKF.QTune = 1;                                  % Process noise covariance tuning
         AKF.RTune = 1;                                  % Measurement noise covariance tuning
-
-        AKF.QuTuned0 = 1e2;                         % For the first derivative 
-        AKF.QuTuned1 = 1e4;                         % For the first derivative
-        AKF.QuTuned2 = 1e6;                        % For the second derivative
-
+        
+        AKF.QuTuned0 = 1e3;%0.5e2;                         % For the first derivative 
+        AKF.QuTuned1 = 1e3;                         % For the first derivative
+        AKF.QuTuned2 = 4e7;                        % For the second derivative
 
         %{
-            QuTune Patch:
-            QuTune No Patch: 
+            Sinusoidal input A10f1:
+                QuTuned0: 1e3
+                QuTuned1: 1e4
+                QuTuned2: 1e6; 
+
+    	    Step input A10: 
+                QuTuned0: 1e2
+                QuTuned1: 0.5e2
+                QuTuned2: 4e7
         %}
 
         % DKF settings
@@ -555,7 +574,7 @@ if simulationSettings.nModels > 1
     
     d = [];
     for k = 1:simulationSettings.nDerivatives+1
-                switch simulationSettings.batchMode
+        switch simulationSettings.batchMode
             case {'Patch'}
                 if isempty(d)
                     d = figure('Name','RMSE for increasing patch covariances');

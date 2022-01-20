@@ -277,12 +277,6 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
                     end
                 end
             end
-            elapsed = toc(startTime);
-            fprintf('    Simulation time: %.2f s \n',elapsed)
-        
-            if obj.simulationSettings.waitBar == true
-                delete(f);
-            end
         
             % Save simulation data in the larger model struct. 
             obj.simulationData.t = t;
@@ -306,11 +300,30 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
         
             obj.simulationData.ufull_DKF = ufull_DKF;
             obj.simulationData.ufull_GDF = ufull_GDF;
+
+            elapsed = toc(startTime);
+            obj.simulationData.fit = obj.evaluateSimulation("AKF");
+
+            fprintf(['    Simulation time: %.2f s \n'...
+                    '    NRMSE: %.3f \n'],elapsed,obj.simulationData.fit)
+        
+            if obj.simulationSettings.waitBar == true
+                delete(f);
+            end
+
         end
         
         %% Evaluate the simulated response
         function [fits] = evaluateSimulation(obj,filters)
-            y_true =  obj.simulationData.yfull(1,:);
+            startTime = 0;          % Start of the RMSE (To ignore transient errors)
+            
+            if startTime == 0
+                startTimeStep = 1;
+            else
+                startTimeStep = startTime/obj.simulationSettings.dt;
+            end
+
+            y_true =  obj.simulationData.yfull(1,startTimeStep:end);
             fits = zeros(length(filters),1);
             i = 1;
 
@@ -332,7 +345,7 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
                 i = i+1;
             end
             if any(ismember(filters,'AKF'))
-                y_AKF = obj.simulationData.yfull_AKF(1,:);
+                y_AKF = obj.simulationData.yfull_AKF(1,startTimeStep:end);
                 fits(i) = goodnessOfFit(y_AKF',y_true',Method);
                 i = i+1;
             end
@@ -347,6 +360,7 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
                 i = i+1;
             end
         end
+        
         %% Plot the full beam plot for a given state q (modal coordinates)
         function simPlots = showBeam(obj,Ax,q)
             if isempty(Ax)
