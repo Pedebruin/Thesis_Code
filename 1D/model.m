@@ -53,35 +53,37 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
          end
 
         %% Simulate the beam model
-        function obj = simulate(obj,MF,LO,KF,AKF,DKF,GDF,Udist)
+        function obj = simulate(obj,MF,LO,KF,AKF,DKF,GDF,Udist,m)
            
             % Handy defenitions & Unpacking
             T = obj.simulationSettings.T;
             dt = obj.simulationSettings.dt;
             t = 0:dt:T;
 
+            sampleSize = obj.simulationSettings.sampleSize;
+
             % Some initialisations!!!
-            yfull = zeros(obj.ny,length(t));            % System output
-            yfull_MF = zeros(obj.ny,length(t));
-            yfull_LO = zeros(obj.ny,length(t)); 
-            yfull_KF = zeros(obj.ny,length(t));
-            yfull_AKF = zeros(obj.ny,length(t));
-            yfull_DKF = zeros(obj.ny,length(t));
-            yfull_GDF = zeros(obj.ny,length(t));
+            yfull = zeros(obj.ny,length(t),sampleSize);            % System output
+            yfull_MF = zeros(obj.ny,length(t),sampleSize);
+            yfull_LO = zeros(obj.ny,length(t),sampleSize); 
+            yfull_KF = zeros(obj.ny,length(t),sampleSize);
+            yfull_AKF = zeros(obj.ny,length(t),sampleSize);
+            yfull_DKF = zeros(obj.ny,length(t),sampleSize);
+            yfull_GDF = zeros(obj.ny,length(t),sampleSize);
         
             U = zeros(obj.nu,1);                                        % Input vector
         
-            qfull = zeros(obj.nq,length(t));                            % Full state vector over time
-            qfull_MF = zeros(obj.nq,length(t));
-            qfull_LO = zeros(obj.nq,length(t));                         % Also for the observers
-            qfull_KF = zeros(obj.nq,length(t));
-            qfull_AKF = zeros(obj.nq+obj.nu*(AKF.nd+1),length(t));          % Augmented state for AKF
-            qfull_DKF = zeros(obj.nq,length(t));
-            qfull_GDF = zeros(obj.nq,length(t));
+            qfull = zeros(obj.nq,length(t),sampleSize);                            % Full state vector over time
+            qfull_MF = zeros(obj.nq,length(t),sampleSize);
+            qfull_LO = zeros(obj.nq,length(t),sampleSize);                         % Also for the observers
+            qfull_KF = zeros(obj.nq,length(t),sampleSize);
+            qfull_AKF = zeros(obj.nq+obj.nu*(AKF.nd+1),length(t),sampleSize);          % Augmented state for AKF
+            qfull_DKF = zeros(obj.nq,length(t),sampleSize);
+            qfull_GDF = zeros(obj.nq,length(t),sampleSize);
         
             % ufull_AKF can be found in the last two states of qfull_AKF (due tobthe augmented nature)
-            ufull_DKF = zeros(obj.nu,length(t));
-            ufull_GDF = zeros(obj.nu,length(t));
+            ufull_DKF = zeros(obj.nu,length(t),sampleSize);
+            ufull_GDF = zeros(obj.nu,length(t),sampleSize);
 
             q1 = zeros(obj.nq,1);                                       % Normal time simulation    
             q1_LO = ones(obj.nq,1)*obj.simulationSettings.obsOffset;        % Initial state estimate for LO
@@ -100,10 +102,12 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
             
             W = mvnrnd(zeros(obj.nq,1),obj.Q,T/dt+1)';
             V = mvnrnd(zeros(obj.ny,1),obj.R,T/dt+1)';
-
-            fprintf(['\n Simulating %s ... \n'...
-                    '    patchCov: %1.1e \n'...
-                    '    accCov: %1.1e \n'],obj.name,obj.modelSettings.patchCov,obj.modelSettings.accCov);
+            
+            if m == 1
+                fprintf(['\n Simulating %s ... \n'...
+                        '    patchCov: %1.1e \n'...
+                        '    accCov: %1.1e \n'],obj.name,obj.modelSettings.patchCov,obj.modelSettings.accCov);
+            end
             startTime = tic;
             
             % Simulation loop!!!! Here, the system is propagated.%%%%%%%%%%%%%%%%%%
@@ -141,8 +145,8 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
                     y = obj.dsys_sim.C*q + obj.dsys_sim.D*U + obj.Dv*v;       % Measurement equation
         
                     % Also save full states for plotting (in q space, so modal)
-                    qfull(:,i) = q;
-                    yfull(:,i) = y;
+                    qfull(:,i,m) = q;
+                    yfull(:,i,m) = y;
         
                 % Run state estimators
                     % MF ----------------------------------------------------------
@@ -158,8 +162,8 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
                     % LO ----------------------------------------------------------
                     if any(ismember(obj.simulationSettings.observer,'LO'))
                         q1_LO = obj.dsys_obs.A*q_LO + obj.dsys_obs.B*U + LO.L*(y(2:end)-obj.dsys_obs.C*q_LO-obj.dsys_obs.D*U);
-                        yfull_LO(:,i) = obj.dsys_sim.C*q_LO + obj.dsys_sim.D*U; % Estimated output
-                        qfull_LO(:,i) = q_LO;       % Save estimated state
+                        yfull_LO(:,i,m) = obj.dsys_sim.C*q_LO + obj.dsys_sim.D*U; % Estimated output
+                        qfull_LO(:,i,m) = q_LO;       % Save estimated state
                     end 
         
                     % KF ----------------------------------------------------------           
@@ -169,8 +173,8 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
                             q1_KF = obj.dsys_obs.A*q_KF + obj.dsys_obs.B*U + KF.K*(y(2:end)-obj.dsys_obs.C*q_KF-obj.dsys_obs.D*U);
         
                             % Save state and output
-                            qfull_KF(:,i) = q_KF;                    
-                            yfull_KF(:,i) = dsys.C*q_KF + dsys.D*U;
+                            qfull_KF(:,i,m) = q_KF;                    
+                            yfull_KF(:,i,m) = dsys.C*q_KF + dsys.D*U;
         
                         else
                             % Measurement update
@@ -182,8 +186,8 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
                             P1_KF = obj.dsys_obs.A*P_KF*obj.dsys_obs.A'+KF.Bw*KF.Q*KF.Bw';
         
                             % Save state and output
-                            qfull_KF(:,i) = q_KF;                    
-                            yfull_KF(:,i) = obj.dsys_sim.C*q_KF + obj.dsys_sim.D*U;
+                            qfull_KF(:,i,m) = q_KF;                    
+                            yfull_KF(:,i,m) = obj.dsys_sim.C*q_KF + obj.dsys_sim.D*U;
         
                         end
                     end
@@ -195,8 +199,8 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
                             q1_AKF = AKF.A*q_AKF + AKF.K*(y(2:end,i)-AKF.C*q_AKF);
         
                             % Save state and output
-                            qfull_AKF(:,i) = q_AKF;                    
-                            yfull_AKF(:,i) = [dsys.C(1,:),zeros(1,obj.nu);
+                            qfull_AKF(:,i,m) = q_AKF;                    
+                            yfull_AKF(:,i,m) = [dsys.C(1,:),zeros(1,obj.nu);
                                             AKF.C]*q_AKF;                   
                         else
                             % Measurement update
@@ -208,8 +212,8 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
                             P1_AKF = AKF.A*P_AKF*AKF.A'+AKF.Bw*AKF.Q*AKF.Bw';
         
                             % Save state and output
-                            qfull_AKF(:,i) = q_AKF;                    
-                            yfull_AKF(:,i) = [obj.dsys_sim.C(1,:),zeros(1,obj.nu*(AKF.nd+1));
+                            qfull_AKF(:,i,m) = q_AKF;                    
+                            yfull_AKF(:,i,m) = [obj.dsys_sim.C(1,:),zeros(1,obj.nu*(AKF.nd+1));
                                             AKF.C]*q_AKF;
                         end
                     end
@@ -237,9 +241,9 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
                         P1_DKF = DKF.A'*P_DKF*DKF.A + DKF.Q;
         
                         % Save state,estimated input and output 
-                        qfull_DKF(:,i) = q_DKF;    
-                        ufull_DKF(:,i) = u_DKF;
-                        yfull_DKF(:,i) = [obj.dsys_sim.C(1,:);
+                        qfull_DKF(:,i,m) = q_DKF;    
+                        ufull_DKF(:,i,m) = u_DKF;
+                        yfull_DKF(:,i,m) = [obj.dsys_sim.C(1,:);
                                         DKF.C]*q_DKF; 
                        
                     end
@@ -263,9 +267,9 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
                         Pq1_GDF = [GDF.A GDF.B]*[Pq_GDF ,Pqu_GDF; Pqu_GDF' Pu_GDF]*[GDF.A'; GDF.B'] + GDF.Q;
         
                         % Save state, estimated input and output
-                        qfull_GDF(:,i) = q_GDF;    
-                        ufull_GDF(:,i) = u_GDF;
-                        yfull_GDF(:,i) = [obj.dsys_sim.C(1,:);
+                        qfull_GDF(:,i,m) = q_GDF;    
+                        ufull_GDF(:,i,m) = u_GDF;
+                        yfull_GDF(:,i,m) = [obj.dsys_sim.C(1,:);
                                         GDF.C]*q_GDF; 
                     end
         
@@ -304,13 +308,13 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
             elapsed = toc(startTime);
             obj.simulationData.fit = obj.evaluateSimulation("AKF");
 
-            fprintf(['    Simulation time: %.2f s \n'...
-                    '    NRMSE: %.3f \n'],elapsed,obj.simulationData.fit)
+            fprintf(['    Sample: %d \n'...
+                    '        Simulation time: %.2f s \n'...
+                    '        NRMSE: %.3f \n'],m,elapsed,obj.simulationData.fit)
         
             if obj.simulationSettings.waitBar == true
                 delete(f);
             end
-
         end
         
         %% Evaluate the simulated response
@@ -456,6 +460,19 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
 
         %% Plot a given mode shape
         function modePlot = showMode(obj,Ax,n)
+            if isempty(Ax)
+                figure()
+                hold on
+                grid on
+                xlabel 'm'
+                ylabel 'm'
+                axis equal
+                xlim([-obj.modelSettings.L/6,obj.modelSettings.L/6]);
+                ylim([0,1.2*obj.modelSettings.L])
+                title 'Beam plot'
+                Ax = gca;
+            end
+
             q = zeros(obj.Nmodes*2,1);
             q(n) = obj.plotSettings.modeAmp*1;
             modePlot = obj.showBeam(Ax,q);

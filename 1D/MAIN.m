@@ -51,13 +51,13 @@ patchL = 50e-3; % Patch length
 
 % Model settings%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Smart patches (Piezo)
-    modelSettings.patches = [0.1];%[0.8];                          % location of start of patches (y/L)
+    modelSettings.patches = [0.8];                          % location of start of patches (y/L)
     modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
     modelSettings.LbElements = 0.1;                         % Preferred length of beam elements (y/L) (will change slightly)
     modelSettings.strainRate = false;                       % Measure strain rate instead of strain. 
-    modelSettings.patchCov = log10(1e-2);                    % True covariance of patch measurement (log10)
-        modelSettings.maxPatchCov = 2;                      % Only when multiple models are simulated (log10)
-        modelSettings.minPatchCov = -10;                    % Only when multiple models are simulated (log10)
+    modelSettings.patchCov = -2;                    	    % True covariance of patch measurement (log10)
+        modelSettings.maxPatchCov = 5;                      % Only when multiple models are simulated (log10)
+        modelSettings.minPatchCov = -5;                    % Only when multiple models are simulated (log10)
 
 % Accelerometers
     modelSettings.Acc = [0.95,0.8,0.2];                        % Location of accelerometers
@@ -78,11 +78,11 @@ patchL = 50e-3; % Patch length
     
     modelSettings.L = L;                                    
     modelSettings.b = b;
-
+    
     modelSettings.rhoError = 1.05;                      % []% density error
     modelSettings.mAccError = 1.05;                     % []% accelerometer mass error
     modelSettings.AccError = 1e-4;                      % accelerometer position error
-
+    
 % simulationSettings (Settings for the simulation)%%%%%%%%%%%%%%%%%%%%%%%%%
 simulationSettings.simulate = true;                     % Simulate at all?
     simulationSettings.waitBar = false;                      % Give waitbar and cancel option (VERY SLOW)
@@ -98,11 +98,11 @@ simulationSettings.simulate = true;                     % Simulate at all?
     
     % Input settings (Settings for the input that is used)
     simulationSettings.distInput = 1;                   % Which input is the disturbance?
-        simulationSettings.stepTime = [0.1,1.1];               % Location of input step ([start time], [endtime], [] )
+        simulationSettings.stepTime = [];%[0.1,1.1];               % Location of input step ([start time], [endtime], [] )
             simulationSettings.stepAmp = 5;             % Step amplitude
         simulationSettings.impulseTime = [];            % Location of input impulse ([time], [])
             simulationSettings.impulseAmp = 10;          % Inpulse amplitude
-        simulationSettings.harmonicTime = [];            % Harmonic input start time ([time], [])
+        simulationSettings.harmonicTime = [0.1];            % Harmonic input start time ([time], [])
             simulationSettings.harmonicFreq = 1;        % Frequency of sinusoidal input ([freq], [])
             simulationSettings.harmonicAmp = 10;         % Frequency input amplitude [Hz]
         simulationSettings.randTime = [];               % random input start time ([time], [])
@@ -121,15 +121,17 @@ simulationSettings.simulate = true;                     % Simulate at all?
     % Batch run settings
     simulationSettings.batch = false;                    % Run simulation in batch?? (A lot of times)
         simulationSettings.batchMode = 'Patch';            % 'Acc','Patch', 'Both' or 'None'
-        simulationSettings.nPatchCov = 15;                  % How many data points between patchCov and minPatchCov?
+        simulationSettings.nPatchCov = 50;                  % How many data points between patchCov and minPatchCov?
         simulationSettings.nAccCov = 15;                    % How many data points between accCov and minaccCov?
         simulationSettings.nDerivatives = 2;               % Highest derivative order? (Also does all lower derivatives) 
-
+        
+        simulationSettings.confidence = true;           % Run every simulation multiple times to get a mean and confidence interval
+            simulationSettings.sampleSize = 2;          % Amount of times every simulation is ran. 
 
     % Observer settings (Settings for the observers) 
-    simulationSettings.observer = ["AKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
+    simulationSettings.observer = ["MF" "LO" "KF" "AKF" "DKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
         simulationSettings.obsOffset = 1e-5;               % Initial state offset (we know its undeformed at the beginning, so probably 0); 
-        
+
         % MF settings
 
         % LO settings
@@ -146,15 +148,15 @@ simulationSettings.simulate = true;                     % Simulate at all?
         AKF.QTune = 1;                                  % Process noise covariance tuning
         AKF.RTune = 1;                                  % Measurement noise covariance tuning
         
-        AKF.QuTuned0 = 1e3;%0.5e2;                         % For the first derivative 
-        AKF.QuTuned1 = 1e3;                         % For the first derivative
-        AKF.QuTuned2 = 4e7;                        % For the second derivative
+        AKF.QuTuned0 = 5e2;                         % For the first derivative 
+        AKF.QuTuned1 = 1e4;                         % For the first derivative
+        AKF.QuTuned2 = 5e6;                        % For the second derivative
 
         %{
             Sinusoidal input A10f1:
-                QuTuned0: 1e3
+                QuTuned0: 5e2
                 QuTuned1: 1e4
-                QuTuned2: 1e6; 
+                QuTuned2: 5e6; 
 
     	    Step input A10: 
                 QuTuned0: 1e2
@@ -186,7 +188,7 @@ plotSettings.plot = true;                                   % Plot the simulatio
         plotSettings.accNumbers = true;                     % Plot acceleromter numbers?
 
     plotSettings.statePlot = true;                          % Plot the state evolutions
-        plotSettings.states = 5;                            % First # states to be plotted
+        plotSettings.states = 3;                            % First # states to be plotted
 
     plotSettings.modes = 0;                                 % Plot the mode shapes?? [number of modes]
         plotSettings.modeAmp = 5e-3;                        % Amplification factor for plot. 
@@ -449,9 +451,9 @@ if simulationSettings.simulate ==  true
                         uC = zeros(1,SYS.nu*AKF.nd);
                         uD = [];
                         Uss = ss(uA,uB,[],[]);
-                        Uss = c2d(Uss,dt,modelSettings.c2dMethod);
+                        Uss = c2d(Uss,dt,modelSettings.c2dMethod); % Checked!
             
-                    AKF.Dv = SYS.Dv(2:end,2:end);
+                    AKF.Dv = SYS.Dv(2:end,2:end);   % Snip off laser measurement
                     AKF.Bw = [SYS.Bw,zeros(SYS.nq,SYS.nu);
                         zeros(SYS.nu*(AKF.nd+1),SYS.nq),Uss.B];
             
@@ -538,7 +540,11 @@ if simulationSettings.simulate ==  true
                 end
         
                 % Simulate!!===========================================================
-                SYS = SYS.simulate(MF,LO,KF,AKF,DKF,GDF,Udist);
+                if simulationSettings.confidence == true
+                    for m = 1:simulationSettings.sampleSize
+                        SYS = SYS.simulate(MF,LO,KF,AKF,DKF,GDF,Udist,m);
+                    end
+                end
                 % =====================================================================
                 
                 l = l+1;
@@ -548,15 +554,15 @@ if simulationSettings.simulate ==  true
     end
     
     % Make a nice plot of the simulation!
+    m = 1;
     if plotSettings.plot == true
         fprintf('\n Plotting simulation... \n')
         for i = 1:min(simulationSettings.nModels,15)
-            simPlots = plotter(modelMat(i));
+            simPlots = plotter(modelMat(i),m);
         end
     end
 end
     
-
 %% Evaluate batch info
 if simulationSettings.nModels > 1
     % Possibly save models

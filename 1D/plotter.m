@@ -1,4 +1,4 @@
-function simPlots = plotter(model)
+function simPlots = plotter(model,m)
 
 % Check if model is simulated
 if isempty(model.simulationData)
@@ -19,22 +19,23 @@ simulationSettings =    model.simulationSettings;
 modelSettings =         model.modelSettings;
 plotSettings =          model.plotSettings;
 
-qfull =     model.simulationData.qfull;             % full states in q space
-y =         model.simulationData.yfull;
-Udist =     model.simulationData.Udist;
+qfull =     model.simulationData.qfull(:,:,m);             % full states in q space
+y =         model.simulationData.yfull(:,:,m);
+Udist =     model.simulationData.Udist(:,:,m);
 
-y_MF = model.simulationData.yfull_MF;
-y_LO = model.simulationData.yfull_LO;
-y_KF = model.simulationData.yfull_KF;
-y_AKF = model.simulationData.yfull_AKF;
-y_DKF = model.simulationData.yfull_DKF;
-y_GDF = model.simulationData.yfull_GDF;
+y_MF = model.simulationData.yfull_MF(:,:,m);
+y_LO = model.simulationData.yfull_LO(:,:,m);
+y_KF = model.simulationData.yfull_KF(:,:,m);
+y_AKF = model.simulationData.yfull_AKF(:,:,m);
+y_DKF = model.simulationData.yfull_DKF(:,:,m);
+y_GDF = model.simulationData.yfull_GDF(:,:,m);
 
-u_DKF = model.simulationData.ufull_DKF;
-u_GDF = model.simulationData.ufull_GDF;
+u_DKF = model.simulationData.ufull_DKF(:,:,m);
+u_GDF = model.simulationData.ufull_GDF(:,:,m);
 
 nPatches = length(model.modelSettings.patches);
 nAcc = length(modelSettings.Acc);
+Nmodes = modelSettings.Nmodes;
 t = 0:simulationSettings.dt:simulationSettings.T;
 
 % Setting up figure
@@ -73,7 +74,7 @@ if isempty(findobj('Name','Simulation results'))
     subplot(12,3,[20,21,23,24])
         hold on
         grid on
-        xlabel 'time [s]'
+        xlabel 'Time [s]'
         ylabel '$m/s^2$'
         title 'Accelometer Outputs'   
         accAx = gca;
@@ -166,18 +167,18 @@ end
 
 %% State plot
 if plotSettings.statePlot == true
-    Nmodes = plotSettings.states; % If you only want to plot the first Nmodes modes. 
-    axes = gobjects(Nmodes);
+    PNmodes = plotSettings.states; % If you only want to plot the first Nmodes modes. 
+    axes = gobjects(PNmodes);
     
     name = 'Observer and true states';
     if isempty(findobj('Name',name))
         b = figure('Name',name);
         sgtitle('Modal states')
         hold on
-        for i = 1:Nmodes
+        for i = 1:PNmodes
             subname = ['State ', i];
 
-            subplot(Nmodes,1,i)
+            subplot(PNmodes,1,i)
             hold on
             grid on
             ylabel(['$\eta$',num2str(i)])  
@@ -193,7 +194,7 @@ if plotSettings.statePlot == true
             movegui(b,'north')
         end
     else
-        for i = 1:Nmodes
+        for i = 1:PNmodes
             subname = ['State ', i];
             axes(i) = findobj('Tag',subname);
         end
@@ -202,40 +203,40 @@ if plotSettings.statePlot == true
     % Plot modal filter
     if any(ismember(simulationSettings.observer,'MF'))
         qfull_MF = model.simulationData.qfull_MF;
-        for i = 1:Nmodes
-            plot(axes(i),t,qfull_MF(i,:),'color',[0 0.4470 0.7410 Alpha]);
+        for i = 1:PNmodes
+            plot(axes(i),t,qfull_MF(i,:,m),'color',[0 0.4470 0.7410 Alpha]);
         end
     end
 
     % Plot Luenberger observer
     if any(ismember(simulationSettings.observer,'LO'))
         qfull_LO = model.simulationData.qfull_LO;
-        for i = 1:Nmodes
-            plot(axes(i),t,qfull_LO(i,:),'color',[0.8500 0.3250 0.0980 Alpha]);
+        for i = 1:PNmodes
+            plot(axes(i),t,qfull_LO(i,:,m),'color',[0.8500 0.3250 0.0980 Alpha]);
         end
     end 
     
     % Plot conventional Kalman Filter
     if any(ismember(simulationSettings.observer,'KF'))
         qfull_KF = model.simulationData.qfull_KF;
-        for i = 1:Nmodes
-            plot(axes(i),t,qfull_KF(i,:),'color',[0.9290 0.6940 0.1250 Alpha]);
+        for i = 1:PNmodes
+            plot(axes(i),t,qfull_KF(i,:,m),'color',[0.9290 0.6940 0.1250 Alpha]);
         end
     end
 
     % Plot Augmented Kalman Filter
     if any(ismember(simulationSettings.observer,'AKF'))
         qfull_AKF = model.simulationData.qfull_AKF;
-        for i = 1:Nmodes
-            plot(axes(i),t,qfull_AKF(i,:),'color',[0.4940 0.1840 0.5560 Alpha]);
+        for i = 1:PNmodes
+            plot(axes(i),t,qfull_AKF(i,:,m),'color',[0.4940 0.1840 0.5560 Alpha]);
         end
     end
 
     % Plot Dual Kalman Filter
     if any(ismember(simulationSettings.observer,'DKF'))
         qfull_DKF = model.simulationData.qfull_DKF;
-        for i = 1:Nmodes
-            plot(axes(i),t,qfull_DKF(i,:),'color',[0.3010 0.7450 0.9330 Alpha]);
+        for i = 1:PNmodes
+            plot(axes(i),t,qfull_DKF(i,:,m),'color',[0.3010 0.7450 0.9330 Alpha]);
         end
 
     end
@@ -243,8 +244,8 @@ if plotSettings.statePlot == true
     % Plot Giljins de Moor Filter (GDF)
     if any(ismember(simulationSettings.observer,'GDF'))
         qfull_GDF = model.simulationData.qfull_GDF;
-        for i = 1:Nmodes
-            plot(axes(i),t,qfull_GDF(i,:),'color',[0.6350 0.0780 0.1840 Alpha]);
+        for i = 1:PNmodes
+            plot(axes(i),t,qfull_GDF(i,:,m),'color',[0.6350 0.0780 0.1840 Alpha]);
         end
     end
     legend(axes(1),['True' simulationSettings.observer])
@@ -257,7 +258,8 @@ if plotSettings.inputSequence == true
         c = figure('Name' ,'System input sequence');
         hold on
         grid on
-        ylabel 'force Input [N]'
+        ylabel 'Force input [N]'
+        xlabel 'Time [s]'
         title 'System input sequence'
         inputAx = gca;
         inputAx.Tag = 'inputAx';
@@ -271,17 +273,17 @@ if plotSettings.inputSequence == true
 
     % Plot Augmented Kalman Filter
     if any(ismember(simulationSettings.observer,'AKF'))
-        plot(inputAx,t,qfull_AKF(Nmodes*2+1,:),'color',[0.4940 0.1840 0.5560 Alpha]);
+        plot(inputAx,t,qfull_AKF(Nmodes*2+1,:,m),'color',[0.4940 0.1840 0.5560 Alpha]);
     end
     
     % Plot Dual Kalman Filter
     if any(ismember(simulationSettings.observer,'DKF'))
-        plot(inputAx,t,u_DKF(1,:),'color',[0.3010 0.7450 0.9330 Alpha]);
+        plot(inputAx,t,u_DKF(1,:,m),'color',[0.3010 0.7450 0.9330 Alpha]);
     end
 
     % Plot Giljins de Moor Filter (GDF)
     if any(ismember(simulationSettings.observer,'GDF'))
-        plot(inputAx,t,u_GDF(1,:),'color',[0.6350 0.0780 0.1840 Alpha]);
+        plot(inputAx,t,u_GDF(1,:,m),'color',[0.6350 0.0780 0.1840 Alpha]);
     end
     
     AKFLocation = ismember(simulationSettings.observer,"AKF");
