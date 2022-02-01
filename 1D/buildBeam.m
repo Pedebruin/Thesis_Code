@@ -325,7 +325,6 @@ functions.
 
 %% Discretisation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % To be able to simulate the system, it is discretised. 
-modelSettings.c2dMethod = 'ZOH';
 dsys = c2d(sys,simulationSettings.dt,modelSettings.c2dMethod);            % Discretise using ZOH
 SYS.dsys_sim = dsys;                                                 % Make new system
 

@@ -31,6 +31,7 @@ This script requires:
     Statistics and machine learning toolbox (mvnrnd command)
     signal processing toolbox 
     System identification toolbox (goodnessOfFit command)
+    Parallel computing toolbox (for parfor)
 %}
 
 clear
@@ -57,7 +58,7 @@ patchL = 50e-3; % Patch length
     modelSettings.strainRate = false;                       % Measure strain rate instead of strain. 
     modelSettings.patchCov = -2;                    	    % True covariance of patch measurement (log10)
         modelSettings.maxPatchCov = 5;                      % Only when multiple models are simulated (log10)
-        modelSettings.minPatchCov = -5;                    % Only when multiple models are simulated (log10)
+        modelSettings.minPatchCov = -10;                    % Only when multiple models are simulated (log10)
 
 % Accelerometers
     modelSettings.Acc = [0.95,0.8,0.2];                        % Location of accelerometers
@@ -82,6 +83,8 @@ patchL = 50e-3; % Patch length
     modelSettings.rhoError = 1.05;                      % []% density error
     modelSettings.mAccError = 1.05;                     % []% accelerometer mass error
     modelSettings.AccError = 1e-4;                      % accelerometer position error
+
+    modelSettings.c2dMethod = 'ZOH';
     
 % simulationSettings (Settings for the simulation)%%%%%%%%%%%%%%%%%%%%%%%%%
 simulationSettings.simulate = true;                     % Simulate at all?
@@ -98,14 +101,14 @@ simulationSettings.simulate = true;                     % Simulate at all?
     
     % Input settings (Settings for the input that is used)
     simulationSettings.distInput = 1;                   % Which input is the disturbance?
-        simulationSettings.stepTime = [];%[0.1,1.1];               % Location of input step ([start time], [endtime], [] )
-            simulationSettings.stepAmp = 5;             % Step amplitude
+        simulationSettings.stepTime = [0.1,2.1];               % Location of input step ([start time], [endtime], [] )
+            simulationSettings.stepAmp = 10;             % Step amplitude
         simulationSettings.impulseTime = [];            % Location of input impulse ([time], [])
             simulationSettings.impulseAmp = 10;          % Inpulse amplitude
-        simulationSettings.harmonicTime = [0.1];            % Harmonic input start time ([time], [])
+        simulationSettings.harmonicTime = [];            % Harmonic input start time ([time], [])
             simulationSettings.harmonicFreq = 1;        % Frequency of sinusoidal input ([freq], [])
             simulationSettings.harmonicAmp = 10;         % Frequency input amplitude [Hz]
-        simulationSettings.randTime = [];               % random input start time ([time], [])
+        simulationSettings.randTime = [1];               % random input start time ([time], [])
             simulationSettings.randInt = [-10,10];        % random input interval (uniformly distributed)
     
     %{
@@ -119,17 +122,21 @@ simulationSettings.simulate = true;                     % Simulate at all?
         significantly
     %}
     % Batch run settings
-    simulationSettings.batch = false;                    % Run simulation in batch?? (A lot of times)
+    simulationSettings.batch = true;                    % Run simulation in batch?? (A lot of times)
         simulationSettings.batchMode = 'Patch';            % 'Acc','Patch', 'Both' or 'None'
-        simulationSettings.nPatchCov = 50;                  % How many data points between patchCov and minPatchCov?
-        simulationSettings.nAccCov = 15;                    % How many data points between accCov and minaccCov?
+            simulationSettings.nPatchCov = 20;                  % How many data points between patchCov and minPatchCov?
+            simulationSettings.nAccCov = 15;                    % How many data points between accCov and minaccCov?
         simulationSettings.nDerivatives = 2;               % Highest derivative order? (Also does all lower derivatives) 
         
-        simulationSettings.confidence = true;           % Run every simulation multiple times to get a mean and confidence interval
-            simulationSettings.sampleSize = 2;          % Amount of times every simulation is ran. 
-
+        simulationSettings.monteCarlo = true;           % Run every simulation multiple times to get a mean and monteCarlo interval
+            simulationSettings.iterations = 5;          % Amount of times every simulation is ran. 
+   
+    % Parallel computing settings
+    simulationSettings.parallel = true;                % Run simulations in parallel? (not for moteCarlo)
+        simulationSettings.nWorkers = 4;                % Number of cores to run this on?
+    
     % Observer settings (Settings for the observers) 
-    simulationSettings.observer = ["MF" "LO" "KF" "AKF" "DKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
+    simulationSettings.observer = ["AKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
         simulationSettings.obsOffset = 1e-5;               % Initial state offset (we know its undeformed at the beginning, so probably 0); 
 
         % MF settings
@@ -148,17 +155,27 @@ simulationSettings.simulate = true;                     % Simulate at all?
         AKF.QTune = 1;                                  % Process noise covariance tuning
         AKF.RTune = 1;                                  % Measurement noise covariance tuning
         
-        AKF.QuTuned0 = 5e2;                         % For the first derivative 
-        AKF.QuTuned1 = 1e4;                         % For the first derivative
-        AKF.QuTuned2 = 5e6;                        % For the second derivative
+        AKF.QuTuned0 = 1e2;                         % For the first derivative 
+        AKF.QuTuned1 = 0.5e2;                         % For the first derivative
+        AKF.QuTuned2 = 4e7;                        % For the second derivative
 
         %{
-            Sinusoidal input A10f1:
+            Sinusoidal input A10f1: (Tuned)
                 QuTuned0: 5e2
                 QuTuned1: 1e4
                 QuTuned2: 5e6; 
 
-    	    Step input A10: 
+    	    Step input A10:  (Tuned)
+                QuTuned0: 1e2
+                QuTuned1: 0.5e2
+                QuTuned2: 4e7
+            
+            Random input A10: (Not tuned)
+                QuTuned0: 1e2
+                QuTuned1: 0.5e2
+                QuTuned2: 4e7
+            
+            Impulse input A10: (Not tuned)
                 QuTuned0: 1e2
                 QuTuned1: 0.5e2
                 QuTuned2: 4e7
@@ -228,6 +245,10 @@ if simulationSettings.batch == false
     simulationSettings.nAccCov = 1;                    % Reset to 1
     simulationSettings.nDerivatives = 0;               % Reset to 0
     simulationSettings.batchMode = 'None';              % Choose correct covariances!
+end
+
+if simulationSettings.monteCarlo == false
+    simulationSettings.iterations = 1;
 end
 
 switch simulationSettings.batchMode
@@ -336,7 +357,7 @@ fprintf(['    # patches: %d \n'...
          '    # modes: %d \n'],nPatches,nAcc,numEl,Nmodes);
 
 
-%% Time simulation %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Set up all models to be simulated
 % This simulates the system and makes nice plots and stuff. It is not
 % really necessary and not the point of this script. But worked wonders when
 % debugging the code. 
@@ -356,17 +377,17 @@ if simulationSettings.simulate ==  true
     '    dt: %.4f s\n'...
     '    Time steps: %d \n'],simulationSettings.T, simulationSettings.dt, length(t))
 
+    if simulationSettings.batch == true
+    fprintf(['    Batch:\n'...
+             '        Number of models: %d \n'...
+             '        Number of iterations per model: %d \n'...
+             '        Number of total simulations: %d \n '],numel(modelMat),simulationSettings.iterations,simulationSettings.iterations*numel(modelMat));
+    end
+
     % Distubrance input generation (function at the bottom)
     Udist = generateInput(simulationSettings);  % Disturbance input
-
-    % Set up waitbar if necessary
-    if simulationSettings.waitBar == true
-        f = waitbar(0,'1','Name','Running simulation loop...',...
-        'CreateCancelBtn','setappdata(gcbf,''canceling'',1)');
-        setappdata(f,'canceling',0);
-    end
-    
-    % Set up filters and simulate multiple times!
+       
+    % Set all models!
     l = 1;
     for i = 1:simulationSettings.nPatchCov
         for j = 1:simulationSettings.nAccCov
@@ -378,17 +399,19 @@ if simulationSettings.simulate ==  true
                 SYS.nq = size(SYS.dsys_sim.A,1);
             
                 % MF setup-------------------------------------------------------------
-                if any(ismember(simulationSettings.observer,"MF"))
+                if any(ismember(SYS.simulationSettings.observer,"MF"))
                     MF.Psi = pinv(SYS.dsys_obs.C);
+                    SYS.MF = MF;
                 else
                     MF = [];
                 end
             
                 % LO setup-------------------------------------------------------------
-                if any(ismember(simulationSettings.observer,"LO"))
+                if any(ismember(SYS.simulationSettings.observer,"LO"))
                     poles = eig(SYS.dsys_obs.A)*(1-LO.poleMovement);                   % Place poles in Discrete time (TODO)
                     LO.L = place(SYS.dsys_obs.A',SYS.dsys_obs.C',poles)'; 
             
+                    SYS.LO = LO;
                     if l == 1
                     fprintf(['    Luenberger Observer-> \n'...
                              '        Pole speed: %3.1f%% increase \n'],LO.poleMovement*100)
@@ -396,7 +419,7 @@ if simulationSettings.simulate ==  true
                 end
             
                 % KF setup-------------------------------------------------------------
-                if any(ismember(simulationSettings.observer,"KF"))
+                if any(ismember(SYS.simulationSettings.observer,"KF"))
                     KF.Q = SYS.Q*KF.QTune;
                     KF.R = SYS.R(2:end,2:end)*KF.RTune;                          % Snip off laser measurement
                     KF.S = SYS.S(:,2:end);
@@ -412,6 +435,7 @@ if simulationSettings.simulate ==  true
                         % No additional setup for non-stationary kalman filter.
                     end
                     
+                    SYS.KF = KF;
                     if l == 1
                         fprintf(['    Kalman Filter-> \n'...
                                  '        Stationary: %d \n'],KF.stationary)
@@ -420,7 +444,7 @@ if simulationSettings.simulate ==  true
             
                 % AKF setup------------------------------------------------------------
                 AKF.nd = AKF.derivativeOrder;
-                if any(ismember(simulationSettings.observer,"AKF"))
+                if any(ismember(SYS.simulationSettings.observer,"AKF"))
                     % q -> [q;qd;u] ->nq+nu*nd
 
                     % OverWrite derivativeOrder!
@@ -451,7 +475,7 @@ if simulationSettings.simulate ==  true
                         uC = zeros(1,SYS.nu*AKF.nd);
                         uD = [];
                         Uss = ss(uA,uB,[],[]);
-                        Uss = c2d(Uss,dt,modelSettings.c2dMethod); % Checked!
+                        Uss = c2d(Uss,dt,SYS.modelSettings.c2dMethod); % Checked!
             
                     AKF.Dv = SYS.Dv(2:end,2:end);   % Snip off laser measurement
                     AKF.Bw = [SYS.Bw,zeros(SYS.nq,SYS.nu);
@@ -481,6 +505,7 @@ if simulationSettings.simulate ==  true
                         % No additional setup for non-stationary augmented kalman filter.
                     end
             
+                    SYS.AKF = AKF;
                     if l == 1
                         fprintf(['    Augmented Kalman Filter-> \n'...
                                  '        Stationary: %d \n'...
@@ -491,7 +516,7 @@ if simulationSettings.simulate ==  true
             
                 % DKF setup------------------------------------------------------------
                 if any(ismember(simulationSettings.observer,"DKF"))
-                    nd_DKF = DKF.derivativeOrder;
+                    DKF.nd = DKF.derivativeOrder;
                     DKF.A = SYS.dsys_obs.A;
                     DKF.B = SYS.dsys_obs.B;
                     DKF.C = SYS.dsys_obs.C;
@@ -499,12 +524,12 @@ if simulationSettings.simulate ==  true
             
                         % Generate temporary ss model for input dynamics (higher order
                         % derivatives can then be modelled!
-                        uA = [zeros(SYS.nu*nd_DKF,SYS.nu),eye(SYS.nu*nd_DKF);
-                                zeros(SYS.nu,SYS.nu*(nd_DKF+1))];
-                        uB = [zeros(nd_DKF*SYS.nu,SYS.nu);
+                        uA = [zeros(SYS.nu*DKF.nd,SYS.nu),eye(SYS.nu*DKF.nd);
+                                zeros(SYS.nu,SYS.nu*(DKF.nd+1))];
+                        uB = [zeros(DKF.nd*SYS.nu,SYS.nu);
                                 eye(SYS.nu)];
-                        uC = zeros(1,SYS.nu*(nd_DKF+1));
-                        uC((0:SYS.nu-1)*(nd_DKF+1)+1) = ones(1,SYS.nu);
+                        uC = zeros(1,SYS.nu*(DKF.nd+1));
+                        uC((0:SYS.nu-1)*(DKF.nd+1)+1) = ones(1,SYS.nu);
             
                         uD = [];
                         Uss = ss(uA,uB,uC,[]);
@@ -518,6 +543,7 @@ if simulationSettings.simulate ==  true
                     DKF.R = SYS.R(2:end,2:end)*DKF.RTune;                             % Snipp off laser measurement
                     DKF.Qu = eye(SYS.nu)*DKF.QuTune;
             
+                    SYS.DKF = DKF;
                     if l == 1
                         fprintf(['    Dual Kalman Filter-> \n'...
                          '        QuTune: %1.1e \n'],DKF.QuTune)
@@ -534,30 +560,64 @@ if simulationSettings.simulate ==  true
                     GDF.Q = SYS.Q*GDF.QTune;
                     GDF.R = SYS.R(2:end,2:end)*GDF.RTune;                             % Snipp off laser measurement
             
+                    SYS.GDF = GDF;
                     if l == 1
                         fprintf('    Giljins de Moor filter-> \n')
                     end
                 end
-        
-                % Simulate!!===========================================================
-                if simulationSettings.confidence == true
-                    for m = 1:simulationSettings.sampleSize
-                        SYS = SYS.simulate(MF,LO,KF,AKF,DKF,GDF,Udist,m);
-                    end
-                end
-                % =====================================================================
-                
+               
                 l = l+1;
                 modelMat(i,j,k) = SYS; % put back in modelVec for safe keeping. 
             end
         end
     end
+
     
-    % Make a nice plot of the simulation!
-    m = 1;
+    %% Actual simulation loop!
+    if simulationSettings.parallel == true
+        pool = gcp('nocreate');
+        if isempty(pool)
+            pool = parpool(simulationSettings.nWorkers);
+        end
+        if pool.NumWorkers == 1
+            delete(pool)
+            pool = parpool(simulationSettings.nWorkers);
+        end
+    else
+        delete(gcp('nocreate'))     % Delete old one
+        ps = parallel.Settings;
+        ps.Pool.AutoCreate = false;
+    end
+
+    D = parallel.pool.DataQueue;
+
+    a = simulationSettings.nPatchCov;
+    b = simulationSettings.nAccCov;
+    c = simulationSettings.nDerivatives+1;
+    d = SYS.simulationSettings.iterations;
+
+    % Simulate!!===========================================================
+    l = 0;
+    parfor i = 1:a                              
+        for j = 1:b
+            for k = 1:c
+                SYS = modelMat(i,j,k); % Pick model to simulate
+                for m = 1:d 
+                    SYS = SYS.simulate(Udist,m);
+                    
+                end
+                SYS.simulationData.fit(:,1,SYS.simulationSettings.iterations+1) = mean(SYS.simulationData.fit(:,1,:),3);
+                SYS.simulationData.fit(:,1,SYS.simulationSettings.iterations+2) = std(SYS.simulationData.fit(:,1,1:end-1),0,3);
+                modelMat(i,j,k) = SYS; % put back in modelVec for safe keeping.   
+            end
+        end
+    end
+    
+    %% Make a nice plot of the simulation!
+    m = 1; % Only first iteration! (For illustrative purposes)
     if plotSettings.plot == true
         fprintf('\n Plotting simulation... \n')
-        for i = 1:min(simulationSettings.nModels,15)
+        for i = 1:min(simulationSettings.nModels,20)
             simPlots = plotter(modelMat(i),m);
         end
     end
@@ -565,69 +625,97 @@ end
     
 %% Evaluate batch info
 if simulationSettings.nModels > 1
-    % Possibly save models
+    % Possibly save models (good practice after very long simulation)
     % save('patchAccCovBIG','modelMat')
-
-    % RMSE
-    fits = zeros(simulationSettings.nPatchCov,simulationSettings.nAccCov,simulationSettings.nDerivatives);
-     for i = 1:simulationSettings.nPatchCov
-        for j = 1:simulationSettings.nAccCov
-            for k = 1:simulationSettings.nDerivatives+1
-                fits(i,j,k) = modelMat(i,j,k).evaluateSimulation("AKF");
+    for z = 1:length(modelMat(1,1).simulationSettings.observer)
+        if simulationSettings.monteCarlo == true
+            means = zeros(simulationSettings.nPatchCov,simulationSettings.nAccCov,simulationSettings.nDerivatives);
+            sigmas = zeros(simulationSettings.nPatchCov,simulationSettings.nAccCov,simulationSettings.nDerivatives);
+            for i = 1:simulationSettings.nPatchCov
+                for j = 1:simulationSettings.nAccCov
+                    for k = 1:simulationSettings.nDerivatives+1
+                        means(i,j,k) = modelMat(i,j,k).simulationData.fit(z,1,end-1);
+                        sigmas(i,j,k) = modelMat(i,j,k).simulationData.fit(z,1,end);
+                    end
+                end
             end
+        else
+            % RMSE
+            fits = zeros(simulationSettings.nPatchCov,simulationSettings.nAccCov,simulationSettings.nDerivatives);
+             for i = 1:simulationSettings.nPatchCov
+                for j = 1:simulationSettings.nAccCov
+                    for k = 1:simulationSettings.nDerivatives+1
+                        fits(i,j,k) = modelMat(i,j,k).simulationData.fit(z,1,1);
+                    end
+                end
+             end
         end
-    end
+        
+        d = [];
+        lines = [];
+        colors = {[0 0.4470 0.7410],[0.8500 0.3250 0.0980],[0.9290 0.6940 0.1250]};
+        for k = 1:simulationSettings.nDerivatives+1
+        color = colors{k};
+            switch simulationSettings.batchMode
+                case {'Patch'}
+                    if isempty(d)
+                        d = figure('Name',join(['RMSE for increasing patch covariances',simulationSettings.observer(z)]));
+                        hold on
+                        title(join(['Patch covariance Vs estimation fit',simulationSettings.observer(z)]));
+                        grid on
+                        xlabel('Patch covariance $[V^2]$')
+                        ylabel('NRMSE [-]')
+                        patchAx = gca;
+                        set(patchAx,'xScale','log')
+%                         set(patchAx,'yScale','log')
+                        ylim([0,1])
+                    end
+
+                    if simulationSettings.monteCarlo == true
+                        meansk = means(:,1,k);
+                        sigmask = sigmas(:,1,k);
+                        t = semilogx(patchAx,patchCovariances,meansk,'-o','Color',color);
+                        lines = [lines,t];
+                        patch(patchAx,[patchCovariances,fliplr(patchCovariances)],[meansk'+sigmask',fliplr(meansk'-sigmask')],color,'edgeAlpha',0);
+                        alpha(0.1)
+                    else
+                        semilogx(patchAx,patchCovariances,fits(:,1,k),'-o','Color',color)
+                    end
     
-    d = [];
-    for k = 1:simulationSettings.nDerivatives+1
-        switch simulationSettings.batchMode
-            case {'Patch'}
-                if isempty(d)
-                    d = figure('Name','RMSE for increasing patch covariances');
+                case {'Acc'}
+                    if isempty(d)
+                        d = figure('Name','RMSE for increasing accelerometer covariances');
+                        hold on
+                        title 'Acc covariance Vs estimation fit'
+                        grid on
+                        xlabel('Accelerometer covariance $[(m/s^2)^2]$')
+                        ylabel('NRMSE [-]')
+                        accAx = gca;
+                        set(accAx,'xScale','log')
+                    end
+                    semilogx(accAx,accCovariances,fits(1,:,k),'-o','Color',color)
+    
+                case {'Both'}
+                    if isempty(d)
+                    d = figure('Name','RMSE analysis');
                     hold on
-                    title 'Patch covariance Vs estimation fit'
+                    title 'Acc covariance Vs Patch covariance'
                     grid on
-                    xlabel('Patch covariance $[V^2]$')
-                    ylabel('NRMSE [-]')
-                    patchAx = gca;
-                    set(patchAx,'xScale','log')
-                end
-                semilogx(patchAx,patchCovariances,fits(:,1,k),'-o')
-
-            case {'Acc'}
-                if isempty(d)
-                    d = figure('Name','RMSE for increasing accelerometer covariances');
-                    hold on
-                    title 'Acc covariance Vs estimation fit'
-                    grid on
-                    xlabel('Accelerometer covariance $[(m/s^2)^2]$')
-                    ylabel('NRMSE [-]')
-                    accAx = gca;
-                    set(accAx,'xScale','log')
-                end
-                semilogx(accAx,accCovariances,fits(1,:,k),'-o')
-
-            case {'Both'}
-                if isempty(d)
-                d = figure('Name','RMSE analysis');
-                hold on
-                title 'Acc covariance Vs Patch covariance'
-                grid on
-                xlabel('Patch covariance')
-                ylabel('Accelerometer covariance')
-                zlabel('RMSE of output')
-                surfAx = gca;
-                set(surfAx,'XScale','log')
-                set(surfAx,'YScale','log')
-                
-                end
-                surf(surfAx,patchCovariances,accCovariances,fits(:,:,k))
+                    xlabel('Patch covariance')
+                    ylabel('Accelerometer covariance')
+                    zlabel('RMSE of output')
+                    surfAx = gca;
+                    set(surfAx,'XScale','log')
+                    set(surfAx,'YScale','log')
+                    
+                    end
+                    surf(surfAx,patchCovariances,accCovariances,fits(:,:,k))
+            end
+            movegui(d,"south")
         end
-        movegui(d,"south")
+        derivativeNames = ["0th order" "1st order" "2nd order" "3rd order" "4th order" "5th order" "6th order" "7th order" "8th order" "This is nuts"];
+        legend(lines,derivativeNames(1:simulationSettings.nDerivatives+1))
     end
-    derivativeNames = ["0th order" "1st order" "2nd order" "3rd order" "4th order"];
-    legend(d.Children,derivativeNames(1:simulationSettings.nDerivatives+1))
-
 end
 
 % That's it, just some closing remarks. 
@@ -638,6 +726,7 @@ fprintf('DONE!!  in %2.2f Seconds! \n',scriptElapsed)
 
 % Input generation for impulse, step, harmonic and random signals
 function [U] = generateInput(simulationSettings)
+
 %{
 Generates generic input sequences based on simulationSettings. 
 Can generate: 
