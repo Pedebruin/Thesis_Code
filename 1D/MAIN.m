@@ -83,7 +83,7 @@ patchL = 50e-3; % Patch length
     modelSettings.rhoError = 1.05;                      % []% density error
     modelSettings.mAccError = 1.05;                     % []% accelerometer mass error
     modelSettings.AccError = 1e-4;                      % accelerometer position error
-
+    
     modelSettings.c2dMethod = 'ZOH';
     
 % simulationSettings (Settings for the simulation)%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -101,14 +101,14 @@ simulationSettings.simulate = true;                     % Simulate at all?
     
     % Input settings (Settings for the input that is used)
     simulationSettings.distInput = 1;                   % Which input is the disturbance?
-        simulationSettings.stepTime = [0.1,2.1];               % Location of input step ([start time], [endtime], [] )
+        simulationSettings.stepTime = [1,2.1];               % Location of input step ([start time], [endtime], [] )
             simulationSettings.stepAmp = 10;             % Step amplitude
         simulationSettings.impulseTime = [];            % Location of input impulse ([time], [])
             simulationSettings.impulseAmp = 10;          % Inpulse amplitude
         simulationSettings.harmonicTime = [];            % Harmonic input start time ([time], [])
             simulationSettings.harmonicFreq = 1;        % Frequency of sinusoidal input ([freq], [])
             simulationSettings.harmonicAmp = 10;         % Frequency input amplitude [Hz]
-        simulationSettings.randTime = [1];               % random input start time ([time], [])
+        simulationSettings.randTime = [];               % random input start time ([time], [])
             simulationSettings.randInt = [-10,10];        % random input interval (uniformly distributed)
     
     %{
@@ -124,7 +124,7 @@ simulationSettings.simulate = true;                     % Simulate at all?
     % Batch run settings
     simulationSettings.batch = true;                    % Run simulation in batch?? (A lot of times)
         simulationSettings.batchMode = 'Patch';            % 'Acc','Patch', 'Both' or 'None'
-            simulationSettings.nPatchCov = 20;                  % How many data points between patchCov and minPatchCov?
+            simulationSettings.nPatchCov = 10;                  % How many data points between patchCov and minPatchCov?
             simulationSettings.nAccCov = 15;                    % How many data points between accCov and minaccCov?
         simulationSettings.nDerivatives = 2;               % Highest derivative order? (Also does all lower derivatives) 
         
@@ -136,7 +136,7 @@ simulationSettings.simulate = true;                     % Simulate at all?
         simulationSettings.nWorkers = 4;                % Number of cores to run this on?
     
     % Observer settings (Settings for the observers) 
-    simulationSettings.observer = ["AKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
+    simulationSettings.observer = ["DKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
         simulationSettings.obsOffset = 1e-5;               % Initial state offset (we know its undeformed at the beginning, so probably 0); 
 
         % MF settings
@@ -155,9 +155,9 @@ simulationSettings.simulate = true;                     % Simulate at all?
         AKF.QTune = 1;                                  % Process noise covariance tuning
         AKF.RTune = 1;                                  % Measurement noise covariance tuning
         
-        AKF.QuTuned0 = 1e2;                         % For the first derivative 
-        AKF.QuTuned1 = 0.5e2;                         % For the first derivative
-        AKF.QuTuned2 = 4e7;                        % For the second derivative
+        AKF.QuTuned0 = 1e6;                             % For the first derivative 
+        AKF.QuTuned1 = 0.5e2;                           % For the first derivative
+        AKF.QuTuned2 = 4e7;                             % For the second derivative
 
         %{
             Sinusoidal input A10f1: (Tuned)
@@ -182,10 +182,35 @@ simulationSettings.simulate = true;                     % Simulate at all?
         %}
 
         % DKF settings
-        DKF.derivativeOrder = 0;                        % Does not work yet (TODO)
+        DKF.derivativeOrder = 2;
         DKF.QTune = 1;
-        DKF.QuTune = 1;
         DKF.RTune = 1;
+
+        DKF.QuTuned0 = 1e1;                                                                         
+        DKF.QuTuned1 = 2.5e5;
+        DKF.QuTuned2 = 5e10;
+
+        %{
+            Sinusoidal input A10f1: 
+                QuTuned0: 
+                QuTuned1: 
+                QuTuned2:  
+
+    	    Step input A10:
+                QuTuned0: 1e1
+                QuTuned1: 2.5e5
+                QuTuned2: 
+            
+            Random input A10: 
+                QuTuned0: 
+                QuTuned1:
+                QuTuned2:
+            
+            Impulse input A10:
+                QuTuned0:
+                QuTuned1:
+                QuTuned2:
+        %}
 
         % GDF settings
         GDF.QTune = 1;
@@ -204,6 +229,9 @@ plotSettings.plot = true;                                   % Plot the simulatio
     plotSettings.accelerometers = true;                     % Plot accelerometers?
         plotSettings.accNumbers = true;                     % Plot acceleromter numbers?
 
+    plotSettings.inputPlot = false;                         % Plot the input and its derivatives?
+        plotSettings.trueInputPlot = true;                  % Plot true or custom input sequence
+                
     plotSettings.statePlot = true;                          % Plot the state evolutions
         plotSettings.states = 3;                            % First # states to be plotted
 
@@ -251,6 +279,7 @@ if simulationSettings.monteCarlo == false
     simulationSettings.iterations = 1;
 end
 
+% Set up modelMat (matrix with all models)
 switch simulationSettings.batchMode
     case {'Patch'}
         modelMat = model(simulationSettings.nPatchCov,1,simulationSettings.nDerivatives+1);
@@ -293,6 +322,8 @@ if simulationSettings.initialError == false
     simulationSettings.obsOffset = 0;
 end
 
+% Actually fill the modelMat matrix with appropriate models! (Varying batch
+% settings)
 l = 1;
 for i = 1:simulationSettings.nPatchCov
     for j = 1:simulationSettings.nAccCov
@@ -347,7 +378,6 @@ end
 
 modelSettings = mSettings;
 
-
 % Give summary of model
 numEl = modelSettings.numEl;
 Nmodes = modelSettings.Nmodes;
@@ -358,10 +388,6 @@ fprintf(['    # patches: %d \n'...
 
 
 %% Set up all models to be simulated
-% This simulates the system and makes nice plots and stuff. It is not
-% really necessary and not the point of this script. But worked wonders when
-% debugging the code. 
-
 if simulationSettings.simulate ==  true
     fprintf(['\n Setting up simulation...\n'...
             '    Noise: %d\n'...
@@ -392,7 +418,7 @@ if simulationSettings.simulate ==  true
     for i = 1:simulationSettings.nPatchCov
         for j = 1:simulationSettings.nAccCov
             for k = 1:simulationSettings.nDerivatives+1
-                SYS = modelMat(i,j,k); % Pick model to simulate
+                SYS = modelMat(i,j,k); % Pick model to set up
         
                 SYS.ny = size(SYS.dsys_sim,1);
                 SYS.nu = size(SYS.dsys_sim,2);
@@ -505,7 +531,6 @@ if simulationSettings.simulate ==  true
                         % No additional setup for non-stationary augmented kalman filter.
                     end
             
-                    SYS.AKF = AKF;
                     if l == 1
                         fprintf(['    Augmented Kalman Filter-> \n'...
                                  '        Stationary: %d \n'...
@@ -513,14 +538,32 @@ if simulationSettings.simulate ==  true
                                  '        nd: %d\n '],AKF.stationary,AKF.QuTune,AKF.nd)
                     end
                 end
+                SYS.AKF = AKF;
             
                 % DKF setup------------------------------------------------------------
+                DKF.nd = DKF.derivativeOrder;
                 if any(ismember(simulationSettings.observer,"DKF"))
-                    DKF.nd = DKF.derivativeOrder;
                     DKF.A = SYS.dsys_obs.A;
-                    DKF.B = SYS.dsys_obs.B;
                     DKF.C = SYS.dsys_obs.C;
-                    DKF.D = SYS.dsys_obs.D;
+                    
+
+                    % OverWrite derivativeOrder!
+                    if simulationSettings.batch == true
+                        DKF.nd = k-1; % Change every loop!
+                    end
+                    
+                    % Pick tuning parameter
+                    switch DKF.nd
+                        case 0
+                            % Use zeroth derivative tuning parameter
+                            DKF.QuTune = DKF.QuTuned0;
+                        case 1
+                            % Use another tuning parameter
+                            DKF.QuTune = DKF.QuTuned1;
+                        case 2
+                            % Use yet another tuning parameter
+                            DKF.QuTune = DKF.QuTuned2;
+                    end
             
                         % Generate temporary ss model for input dynamics (higher order
                         % derivatives can then be modelled!
@@ -537,18 +580,20 @@ if simulationSettings.simulate ==  true
                     
                     DKF.uA = Uss.A;
                     DKF.uB = Uss.B; 
-                    DKF.uC = Uss.C; % IMPLEMENT THIS IN SIMULATION LOOP! (So does not work yet)
-            
+                    DKF.uC = [eye(SYS.nu),zeros(SYS.nu,(DKF.nd)*SYS.nu)];
+                    
+                    DKF.D = SYS.dsys_obs.D;
+                    DKF.B = SYS.dsys_obs.B;
                     DKF.Q = SYS.Q*DKF.QTune;
                     DKF.R = SYS.R(2:end,2:end)*DKF.RTune;                             % Snipp off laser measurement
                     DKF.Qu = eye(SYS.nu)*DKF.QuTune;
             
-                    SYS.DKF = DKF;
                     if l == 1
                         fprintf(['    Dual Kalman Filter-> \n'...
                          '        QuTune: %1.1e \n'],DKF.QuTune)
                     end
                 end
+                SYS.DKF = DKF;
             
                 % GDF setup------------------------------------------------------------
                 if any(ismember(simulationSettings.observer,"GDF"))
@@ -598,17 +643,20 @@ if simulationSettings.simulate ==  true
 
     % Simulate!!===========================================================
     l = 0;
-    parfor i = 1:a                              
+    for i = 1:a                              
         for j = 1:b
             for k = 1:c
                 SYS = modelMat(i,j,k); % Pick model to simulate
                 for m = 1:d 
                     SYS = SYS.simulate(Udist,m);
-                    
                 end
                 SYS.simulationData.fit(:,1,SYS.simulationSettings.iterations+1) = mean(SYS.simulationData.fit(:,1,:),3);
                 SYS.simulationData.fit(:,1,SYS.simulationSettings.iterations+2) = std(SYS.simulationData.fit(:,1,1:end-1),0,3);
+                SYS.simulated = 1;
                 modelMat(i,j,k) = SYS; % put back in modelVec for safe keeping.   
+
+                % See how far along we are!
+                
             end
         end
     end
@@ -718,14 +766,23 @@ if simulationSettings.nModels > 1
     end
 end
 
+%% Also plot input and its derivatives
+if plotSettings.inputPlot == true
+    plotInput(modelMat(1),3);
+end
+
 % That's it, just some closing remarks. 
 scriptElapsed = toc(startScript);
 fprintf('DONE!!  in %2.2f Seconds! \n',scriptElapsed)
+
+%%
+
 
 %% FUNCTIONS!!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Input generation for impulse, step, harmonic and random signals
 function [U] = generateInput(simulationSettings)
+
 
 %{
 Generates generic input sequences based on simulationSettings. 
@@ -773,13 +830,18 @@ Adds these signals together in an imput signal U!
             startSample = 1;
             t = 0:dt:T;
         else
-            startSample = ceil(simulationSettings.harmonicTime/dt);
-            t = (simulationSettings.harmonicTime-dt:dt:T)-simulationSettings.harmonicTime;
+            startSample = ceil(simulationSettings.harmonicTime(1)/dt);
+            t = (simulationSettings.harmonicTime(1)-dt:dt:T)-simulationSettings.harmonicTime(1);
         end
-        
+
         A = simulationSettings.harmonicAmp;
         f = simulationSettings.harmonicFreq;
         uHarmonic(startSample:end) = A*sin(2*pi*t/f);
+
+        if length(simulationSettings.harmonicTime) > 1                          % If end time is defined
+            stopSample = floor(simulationSettings.harmonicTime(2)/dt);
+            uHarmonic(stopSample:end) = zeros(1,T/dt-stopSample+2);
+        end
     end
 
     % Random Input
@@ -801,4 +863,51 @@ Adds these signals together in an imput signal U!
     if size(0:dt:T) ~= length(U)
         error('Input length is not correct! Probably indexing issue :(')
     end
+end
+
+% Plot the input and its derivatives
+function [] = plotInput(model,nd)
+    simulationSettings = model.simulationSettings;
+    
+    if model.plotSettings.trueInputPlot == false
+        % Generate custom input sequence to plot!
+            simulationSettings.stepTime = [1,3];               % Location of input step ([start time], [endtime], [] )
+                simulationSettings.stepAmp = 10;             % Step amplitude
+            simulationSettings.impulseTime = [4];            % Location of input impulse ([time], [])
+                simulationSettings.impulseAmp = 10;          % Inpulse amplitude
+            simulationSettings.harmonicTime = [5,7];            % Harmonic input start time ([time], [])
+                simulationSettings.harmonicFreq = 1;        % Frequency of sinusoidal input ([freq], [])
+                simulationSettings.harmonicAmp = 10;         % Frequency input amplitude [Hz]
+            simulationSettings.randTime = [8];               % random input start time ([time], [])
+                simulationSettings.randInt = [-10,10];        % random input interval (uniformly distributed)
+        
+        simulationSettings.dt = 1e-3;
+        simulationSettings.T = 10;
+    end
+
+    Udist = generateInput(simulationSettings);
+    Udist = lowpass(Udist,1,1/simulationSettings.dt);
+
+    t = 0:simulationSettings.dt:simulationSettings.T;
+
+    U = zeros(nd+1,length(Udist));
+    U(1,:) = Udist;
+
+    for i = 1:nd+1
+        U(i+1,1:end-1) = diff(U(i,:))/simulationSettings.dt;
+    end
+    
+    derivatives = ["0^{th}" "1^{st}" "2^{nd}" "3^{rd}" "4^{th}" "5^{th}" "6^{th}"];
+    units = ["$[N]$" "$[N/s]$" "$[N/s^2]$" "$[N/s^3]$"];
+
+    figure('Name','Input & Derivatives')
+    for i = 1:nd+1
+        subplot(nd+1,1,i)
+        hold on
+        title(['$',char(derivatives(i)),'$', ' Derivative'])
+        ylabel(units(i))
+        plot(t,U(i,:))
+    end
+    xlabel('Time [s]')
+
 end

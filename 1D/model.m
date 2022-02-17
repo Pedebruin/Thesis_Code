@@ -28,7 +28,7 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
         observers;              % Observers for this model!
 
         simulationSettings;     % Simulation settings
-
+        simulated = 0;          % Is this model simulated or not?
         simulationData;         % Data from a simulation
 
         Q;                      % Process covariance matrix
@@ -89,7 +89,7 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
             qfull_GDF = zeros(obj.nq,length(t));
         
             % ufull_AKF can be found in the last two states of qfull_AKF (due tobthe augmented nature)
-            ufull_DKF = zeros(obj.nu,length(t));
+            ufull_DKF = zeros(obj.nu*(obj.DKF.nd+1),length(t));
             ufull_GDF = zeros(obj.nu,length(t));
 
             q1 = zeros(obj.nq,1);                                       % Normal time simulation    
@@ -98,13 +98,13 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
             q1_AKF = zeros(obj.nq+obj.nu*(obj.AKF.nd+1),1);                         % Initial sate estimate for obj.AKF 
                 q1_AKF(1:obj.nq) = ones(obj.nq,1)*obj.simulationSettings.obsOffset; % Only  beam states offset error
             q1_DKF = ones(obj.nq,1)*obj.simulationSettings.obsOffset;       % Initial state estimate for DKF
-                u1_DKF = zeros(obj.nu,1);
+                u1_DKF = zeros(obj.nu*(obj.DKF.nd+1),1);
             q1_GDF = ones(obj.nq,1)*obj.simulationSettings.obsOffset;       % Initial state estimate for GDF
         
             P1_KF = zeros(obj.nq);                                        % Initial P matrix kalman filter
             P1_AKF = zeros(obj.nq+obj.nu*(obj.AKF.nd+1));
             P1_DKF = zeros(obj.nq);
-                Pu1_DKF = zeros(obj.nu);
+                Pu1_DKF = zeros(obj.nu*(obj.DKF.nd+1));
             Pq1_GDF  = zeros(obj.nq);
             
             W = mvnrnd(zeros(obj.nq,1),obj.Q,T/dt+1)';
@@ -199,7 +199,7 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
                         end
                     end
         
-                    % obj.AKF----------------------------------------------------------
+                    % AKF----------------------------------------------------------
                     if any(ismember(obj.simulationSettings.observer,'AKF'))
                         if obj.AKF.stationary == true
                             % Steady state kalman filter (Same as LO, but with kalman gain)
@@ -228,23 +228,23 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
                     % DKF----------------------------------------------------------
                     if any(ismember(obj.simulationSettings.observer,'DKF'))
                         % Measurement update of INPUT estimate
-                        Ku_DKF = Pu_DKF*obj.DKF.D'/(obj.DKF.D*Pu_DKF*obj.DKF.D' + obj.DKF.R);
+                        Ku_DKF = Pu_DKF*obj.DKF.uC'*obj.DKF.D'/(obj.DKF.D*obj.DKF.uC*Pu_DKF*obj.DKF.uC'*obj.DKF.D' + obj.DKF.R);
         
-                        u_DKF = u_DKF + Ku_DKF*(y(2:end)-obj.DKF.C*q_DKF-obj.DKF.D*u_DKF);
-                        Pu_DKF = Pu_DKF - Ku_DKF*obj.DKF.D*Pu_DKF;
+                        u_DKF = u_DKF + Ku_DKF*(y(2:end)-obj.DKF.C*q_DKF-obj.DKF.D*obj.DKF.uC*u_DKF);
+                        Pu_DKF = Pu_DKF - Ku_DKF*obj.DKF.D*obj.DKF.uC*Pu_DKF;
         
                         % Measurement update STATE estimate
                         K_DKF = P_DKF*obj.DKF.C'/(obj.DKF.C*P_DKF*obj.DKF.C' + obj.DKF.R);
         
-                        q_DKF = q_DKF + K_DKF*(y(2:end)-obj.DKF.C*q_DKF-obj.DKF.D*u_DKF);
+                        q_DKF = q_DKF + K_DKF*(y(2:end)-obj.DKF.C*q_DKF-obj.DKF.D*obj.DKF.uC*u_DKF);
                         P_DKF = P_DKF - K_DKF*obj.DKF.C*P_DKF;
         
                         % Time update of INPUT estimate
-                        u1_DKF = u_DKF;                 % Random walk!
-                        Pu1_DKF = Pu_DKF + obj.DKF.Qu;
+                        u1_DKF = obj.DKF.uA*u_DKF;                 % Random walk!
+                        Pu1_DKF = obj.DKF.uA*Pu_DKF*obj.DKF.uA^T + obj.DKF.uB*obj.DKF.Qu*obj.DKF.uB';
         
                         % Time update STATE estimate
-                        q1_DKF = obj.DKF.A*q_DKF + obj.DKF.B*u_DKF;  % Dynamics propagation using estimated input
+                        q1_DKF = obj.DKF.A*q_DKF + obj.DKF.B*obj.DKF.uC*u_DKF;  % Dynamics propagation using estimated input
                         P1_DKF = obj.DKF.A'*P_DKF*obj.DKF.A + obj.DKF.Q;
         
                         % Save state,estimated input and output 
