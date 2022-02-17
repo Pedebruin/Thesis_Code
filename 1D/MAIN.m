@@ -55,7 +55,7 @@ patchL = 50e-3; % Patch length
     modelSettings.patches = [0.8];                          % location of start of patches (y/L)
     modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
     modelSettings.LbElements = 0.1;                         % Preferred length of beam elements (y/L) (will change slightly)
-    modelSettings.strainRate = false;                       % Measure strain rate instead of strain. 
+    modelSettings.strainRate = true;                       % Measure strain rate instead of strain. 
     modelSettings.patchCov = -2;                    	    % True covariance of patch measurement (log10)
         modelSettings.maxPatchCov = 5;                      % Only when multiple models are simulated (log10)
         modelSettings.minPatchCov = -10;                    % Only when multiple models are simulated (log10)
@@ -122,21 +122,22 @@ simulationSettings.simulate = true;                     % Simulate at all?
         significantly
     %}
     % Batch run settings
-    simulationSettings.batch = true;                    % Run simulation in batch?? (A lot of times)
+    simulationSettings.batch = false;                    % Run simulation in batch?? (A lot of times)
         simulationSettings.batchMode = 'Patch';            % 'Acc','Patch', 'Both' or 'None'
             simulationSettings.nPatchCov = 10;                  % How many data points between patchCov and minPatchCov?
             simulationSettings.nAccCov = 15;                    % How many data points between accCov and minaccCov?
         simulationSettings.nDerivatives = 2;               % Highest derivative order? (Also does all lower derivatives) 
-        
-        simulationSettings.monteCarlo = true;           % Run every simulation multiple times to get a mean and monteCarlo interval
-            simulationSettings.iterations = 5;          % Amount of times every simulation is ran. 
+      
+    % Run each simulation multiple times for noise realisations?
+    simulationSettings.monteCarlo = false;           % Run every simulation multiple times to get a mean and monteCarlo interval
+        simulationSettings.iterations = 5;          % Amount of times every simulation is ran. 
    
     % Parallel computing settings
-    simulationSettings.parallel = true;                % Run simulations in parallel? (not for moteCarlo)
+    simulationSettings.parallel = false;                % Run simulations in parallel? (not for moteCarlo)
         simulationSettings.nWorkers = 4;                % Number of cores to run this on?
     
     % Observer settings (Settings for the observers) 
-    simulationSettings.observer = ["DKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
+    simulationSettings.observer = ["AKF" "DKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
         simulationSettings.obsOffset = 1e-5;               % Initial state offset (we know its undeformed at the beginning, so probably 0); 
 
         % MF settings
@@ -152,8 +153,8 @@ simulationSettings.simulate = true;                     % Simulate at all?
         % AKF settings
         AKF.stationary = false;                         % Use stationary AKF? (DOES NOT WORK YET)
         AKF.derivativeOrder = 0;                        % Higher order derivative? (0:CP, 1:CV, 2:CA)
-        AKF.QTune = 1;                                  % Process noise covariance tuning
-        AKF.RTune = 1;                                  % Measurement noise covariance tuning
+        AKF.QTune = 1e-6; % eye*QTune                   % Process noise covariance tuning
+        AKF.RTune = 1; % R*RTune                        % Measurement noise covariance tuning
         
         AKF.QuTuned0 = 1e6;                             % For the first derivative 
         AKF.QuTuned1 = 0.5e2;                           % For the first derivative
@@ -182,9 +183,9 @@ simulationSettings.simulate = true;                     % Simulate at all?
         %}
 
         % DKF settings
-        DKF.derivativeOrder = 2;
-        DKF.QTune = 1;
-        DKF.RTune = 1;
+        DKF.derivativeOrder = 0;
+        DKF.QTune = eps; % eye*QTune
+        DKF.RTune = 1; % R*RTune
 
         DKF.QuTuned0 = 1e1;                                                                         
         DKF.QuTuned1 = 2.5e5;
@@ -213,8 +214,8 @@ simulationSettings.simulate = true;                     % Simulate at all?
         %}
 
         % GDF settings
-        GDF.QTune = 1;
-        GDF.RTune = 1;
+        GDF.QTune = 1e-6; % eye*QTune
+        GDF.RTune = 1;  
 
 % plotSettings (Governs how the results are plotted!)%%%%%%%%%%%%%%%%%%%%%%
 plotSettings.plot = true;                                   % Plot the simulation?
@@ -512,7 +513,7 @@ if simulationSettings.simulate ==  true
                     AKF.C = [SYS.dsys_obs.C, SYS.dsys_obs.D, zeros(SYS.ny-1,SYS.nu*AKF.nd)];
                                               
                     AKF.R = SYS.R(2:end,2:end)*AKF.RTune;                                       % Do you trust your measurements?
-                    AKF.Q = SYS.Q*AKF.QTune;                                           % Do you trust your model?
+                    AKF.Q = eye(size(SYS.Q,1))*AKF.QTune;                                           % Do you trust your model?
                     AKF.Qu = [1,zeros(1,nPatches);
                               zeros(nPatches,1),zeros(nPatches,nPatches)]*AKF.QuTune;                  % Input covariance!!
             
@@ -545,6 +546,7 @@ if simulationSettings.simulate ==  true
                 if any(ismember(simulationSettings.observer,"DKF"))
                     DKF.A = SYS.dsys_obs.A;
                     DKF.C = SYS.dsys_obs.C;
+                    DKF.Bw = SYS.Bw;
                     
 
                     % OverWrite derivativeOrder!
@@ -584,7 +586,7 @@ if simulationSettings.simulate ==  true
                     
                     DKF.D = SYS.dsys_obs.D;
                     DKF.B = SYS.dsys_obs.B;
-                    DKF.Q = SYS.Q*DKF.QTune;
+                    DKF.Q = eye(size(SYS.Q,1))*DKF.QTune;
                     DKF.R = SYS.R(2:end,2:end)*DKF.RTune;                             % Snipp off laser measurement
                     DKF.Qu = eye(SYS.nu)*DKF.QuTune;
             
@@ -602,7 +604,7 @@ if simulationSettings.simulate ==  true
                     GDF.C = SYS.dsys_obs.C;
                     GDF.D = SYS.dsys_obs.D;
             
-                    GDF.Q = SYS.Q*GDF.QTune;
+                    GDF.Q = eye(size(SYS.Q,1))*GDF.QTune;
                     GDF.R = SYS.R(2:end,2:end)*GDF.RTune;                             % Snipp off laser measurement
             
                     SYS.GDF = GDF;
