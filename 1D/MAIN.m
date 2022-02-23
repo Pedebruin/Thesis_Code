@@ -1,39 +1,3 @@
-%{
-This is a 1D Euler bernoulli simulation with piëzo patches
-
-The beam model is generated based on Euler Bernoulli beam theory. The
-piezoelec coupling is implemented as in the paper from 
-
-Aktas, K. G.
-Esen, I.
-Doi:10.48084/etasr.3949
-
-The author of this code is Pim de Bruin. 
-
-The main model parameters are found at the top of the script.
-
-The patches can be placed through modelSettings.patches. This is a vector
-with the bottom location of each patch in natural coordinates. the length
-of this vector determines the amount of patches. The size of the patches is 
-determined through patchL. Same goes for the accelerometers and
-modelSettings.Acc. 
-
-The rest of the parameters are relatively self explanatory. If you have any
-questions or find an error (very very probable) don't hesitate to send me a
-message! @ P.E.deBruin@student.tudelft.nl or 0615331950
-
-XXX Pim
-
-This script requires:
-    Symbolic math toolbox 
-    Control system toolbox (For feedback command)
-    Robust Control toolbox (For Hinf command)
-    Statistics and machine learning toolbox (mvnrnd command)
-    signal processing toolbox 
-    System identification toolbox (goodnessOfFit command)
-    Parallel computing toolbox (for parfor)
-%}
-
 clear
 close all
 set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',12);  
@@ -45,25 +9,25 @@ startScript= tic;
 
 %% Parameters & Settings
 % Basic settings
-L = 370e-3;     % Beam length
-b = 40e-3;      % Beam width
-h = 1e-3;       % Beam thickness
-patchL = 50e-3; % Patch length
+L = 150e-3;     % Beam length
+b = 20e-3;      % Beam width
+h = 0.1e-3;     % Beam thickness
+patchL = 30e-3; % Patch length
 
 % Model settings%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Smart patches (Piezo)
-    modelSettings.patches = [0.8];                          % location of start of patches (y/L)
+    modelSettings.patches = [0];                          % location of start of patches (y/L)
     modelSettings.nsElementsP = 3;                          % Number of smart elements per patch
     modelSettings.LbElements = 0.1;                         % Preferred length of beam elements (y/L) (will change slightly)
-    modelSettings.strainRate = true;                       % Measure strain rate instead of strain. 
-    modelSettings.patchCov = -2;                    	    % True covariance of patch measurement (log10)
+    modelSettings.strainRate = false;                       % Measure strain rate instead of strain. 
+    modelSettings.patchCov = -10;                    	    % True covariance of patch measurement (log10)
         modelSettings.maxPatchCov = 5;                      % Only when multiple models are simulated (log10)
         modelSettings.minPatchCov = -10;                    % Only when multiple models are simulated (log10)
 
 % Accelerometers
-    modelSettings.Acc = [0.95,0.8,0.2];                        % Location of accelerometers
-    modelSettings.mAcc = 0.005;                              % Mass of accelerometers
-    modelSettings.accCov = log10(1e-2);                             % True covariance of accelerometer measurement
+    modelSettings.Acc = [1,0.75];                        % Location of accelerometers
+    modelSettings.mAcc = 0.00127;                              % Mass of accelerometers
+    modelSettings.accCov = -2;                             % True covariance of accelerometer measurement
         modelSettings.maxAccCov = 1;                      % Only when multiple models are simulated (log10)
         modelSettings.minAccCov = -10;                      % Only when multiple model sare simulated (log10)
 
@@ -72,7 +36,7 @@ patchL = 50e-3; % Patch length
 % Modelling 
     modelSettings.Nmodes = 5;                              % Number of modes to be modelled (Can't be larger then the amount of nodes)
     modelSettings.measurementHeight = 1;                    % Height of the measurement
-    modelSettings.forceHeight = 0.1;                        % Height of the input force.
+    modelSettings.forceHeight = 1;                        % Height of the input force.
     
     modelSettings.wcov = 0;                              % Process noise covariance
     modelSettings.laserCov = 0;                          % Laser covariance                                          
@@ -82,7 +46,7 @@ patchL = 50e-3; % Patch length
     
     modelSettings.rhoError = 1.05;                      % []% density error
     modelSettings.mAccError = 1.05;                     % []% accelerometer mass error
-    modelSettings.AccError = 1e-4;                      % accelerometer position error
+    modelSettings.AccError = 1e-3;                      % accelerometer position error
     
     modelSettings.c2dMethod = 'ZOH';
     
@@ -100,17 +64,19 @@ simulationSettings.simulate = true;                     % Simulate at all?
     simulationSettings.T = 5;                           % Total simulation time
     
     % Input settings (Settings for the input that is used)
-    simulationSettings.distInput = 1;                   % Which input is the disturbance?
-        simulationSettings.stepTime = [1,2.1];               % Location of input step ([start time], [endtime], [] )
-            simulationSettings.stepAmp = 10;             % Step amplitude
+    simulationSettings.distInput = true;                   % Which input is the disturbance?
+        simulationSettings.stepTime = [1,3];               % Location of input step ([start time], [endtime], [] )
+            simulationSettings.stepAmp = 1e-2;             % Step amplitude
         simulationSettings.impulseTime = [];            % Location of input impulse ([time], [])
-            simulationSettings.impulseAmp = 10;          % Inpulse amplitude
+            simulationSettings.impulseAmp = 1e-2;          % Inpulse amplitude
         simulationSettings.harmonicTime = [];            % Harmonic input start time ([time], [])
             simulationSettings.harmonicFreq = 1;        % Frequency of sinusoidal input ([freq], [])
-            simulationSettings.harmonicAmp = 10;         % Frequency input amplitude [Hz]
+            simulationSettings.harmonicAmp = 1e-2;         % Frequency input amplitude [Hz]
         simulationSettings.randTime = [];               % random input start time ([time], [])
-            simulationSettings.randInt = [-10,10];        % random input interval (uniformly distributed)
-    
+            simulationSettings.randInt = [-1,1]*1e-2;        % random input interval (uniformly distributed)
+    simulationSettings.lowpassInput = false;
+        simulationSettings.cutoffFrequency = 150;       % Hz
+
     %{
         Batch mode runs the script a lot of times to analyse meta
         results like the influence of different tuning parameters, or
@@ -123,21 +89,21 @@ simulationSettings.simulate = true;                     % Simulate at all?
     %}
     % Batch run settings
     simulationSettings.batch = false;                    % Run simulation in batch?? (A lot of times)
-        simulationSettings.batchMode = 'Patch';            % 'Acc','Patch', 'Both' or 'None'
-            simulationSettings.nPatchCov = 10;                  % How many data points between patchCov and minPatchCov?
-            simulationSettings.nAccCov = 15;                    % How many data points between accCov and minaccCov?
-        simulationSettings.nDerivatives = 2;               % Highest derivative order? (Also does all lower derivatives) 
+        simulationSettings.batchMode = 'None';            % 'Acc','Patch', 'Both' or 'None'
+            simulationSettings.nPatchCov = 1 ;                  % How many data points between patchCov and minPatchCov?
+            simulationSettings.nAccCov = 1;                    % How many data points between accCov and minaccCov?
+        simulationSettings.nDerivatives = 0;               % Highest derivative order? (Also does all lower derivatives) 
       
     % Run each simulation multiple times for noise realisations?
     simulationSettings.monteCarlo = false;           % Run every simulation multiple times to get a mean and monteCarlo interval
         simulationSettings.iterations = 5;          % Amount of times every simulation is ran. 
    
     % Parallel computing settings
-    simulationSettings.parallel = false;                % Run simulations in parallel? (not for moteCarlo)
+    simulationSettings.parallel = false;                % Run simulations in parallel?
         simulationSettings.nWorkers = 4;                % Number of cores to run this on?
     
     % Observer settings (Settings for the observers) 
-    simulationSettings.observer = ["AKF" "DKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
+    simulationSettings.observer = ["AKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
         simulationSettings.obsOffset = 1e-5;               % Initial state offset (we know its undeformed at the beginning, so probably 0); 
 
         % MF settings
@@ -153,12 +119,14 @@ simulationSettings.simulate = true;                     % Simulate at all?
         % AKF settings
         AKF.stationary = false;                         % Use stationary AKF? (DOES NOT WORK YET)
         AKF.derivativeOrder = 0;                        % Higher order derivative? (0:CP, 1:CV, 2:CA)
-        AKF.QTune = 1e-6; % eye*QTune                   % Process noise covariance tuning
+        AKF.QTune = 1e-6; % eye*QTune                  % Process noise covariance tuning
         AKF.RTune = 1; % R*RTune                        % Measurement noise covariance tuning
-        
-        AKF.QuTuned0 = 1e6;                             % For the first derivative 
-        AKF.QuTuned1 = 0.5e2;                           % For the first derivative
-        AKF.QuTuned2 = 4e7;                             % For the second derivative
+        AKF.P0 = 1e2;
+        AKF.Pu0 = 1e5;
+
+        AKF.QuTuned0 = 1e10;                             % For the zeroth derivative 
+        AKF.QuTuned1 = 1e15;                             % For the first derivative
+        AKF.QuTuned2 = 1e20;                             % For the second derivative
 
         %{
             Sinusoidal input A10f1: (Tuned)
@@ -168,7 +136,7 @@ simulationSettings.simulate = true;                     % Simulate at all?
 
     	    Step input A10:  (Tuned)
                 QuTuned0: 1e2
-                QuTuned1: 0.5e2
+                QuTuned1: 1e6
                 QuTuned2: 4e7
             
             Random input A10: (Not tuned)
@@ -184,12 +152,14 @@ simulationSettings.simulate = true;                     % Simulate at all?
 
         % DKF settings
         DKF.derivativeOrder = 0;
-        DKF.QTune = eps; % eye*QTune
+        DKF.QTune = 1e-5; % eye*QTune
         DKF.RTune = 1; % R*RTune
+        DKF.P0 = 1e-5;
+        DKF.Pu0 = 1e-10;
 
-        DKF.QuTuned0 = 1e1;                                                                         
-        DKF.QuTuned1 = 2.5e5;
-        DKF.QuTuned2 = 5e10;
+        DKF.QuTuned0 = 1e-1;                                                                         
+        DKF.QuTuned1 = 1e10;
+        DKF.QuTuned2 = 1e20;
 
         %{
             Sinusoidal input A10f1: 
@@ -216,6 +186,9 @@ simulationSettings.simulate = true;                     % Simulate at all?
         % GDF settings
         GDF.QTune = 1e-6; % eye*QTune
         GDF.RTune = 1;  
+        GDF.Pq0 = 1e-2;
+        GDF.Pu0 = 1;
+        GDF.Pqu0 = 0;
 
 % plotSettings (Governs how the results are plotted!)%%%%%%%%%%%%%%%%%%%%%%
 plotSettings.plot = true;                                   % Plot the simulation?
@@ -237,7 +210,7 @@ plotSettings.plot = true;                                   % Plot the simulatio
         plotSettings.states = 3;                            % First # states to be plotted
 
     plotSettings.modes = 0;                                 % Plot the mode shapes?? [number of modes]
-        plotSettings.modeAmp = 5e-3;                        % Amplification factor for plot. 
+        plotSettings.modeAmp = 5e-4;                        % Amplification factor for plot. 
 
     plotSettings.alphaMin = 0.3;                            % start of alpha interp
 
@@ -250,14 +223,14 @@ Beam.mu = 0.334;                    % Poisson's ratio of beam
 Beam.rho = 2710;                    % Mass density of beam
 Beam.zeta = 0.01;                   % Modal damping coefficient of beam
 
-% Smart beam parameters :PI P-876 DuraAct (This is a 'smart' element)
+% Smart beam parameters:
 sBeam = copy(Beam); sBeam.name = 'sBeam';       
 sBeam.L = patchL/modelSettings.nsElementsP;     % Length of smart beam element
-sBeam.ph = 0.5e-3;                              % m 
+sBeam.ph = 0.01e-3;                              % m 
 sBeam.pb = b;                                   % m
-sBeam.pE = 5.2e10;                      
+sBeam.pE = 1e1;                      
 sBeam.pmu = 0.334;
-sBeam.prho = 7800;
+sBeam.prho = 1000;
 
 % strain element parameters (TODO)
 
@@ -345,7 +318,7 @@ for i = 1:simulationSettings.nPatchCov
                 mSettings.accCov = accCovariances(j);
             case {'None'}
                 mSettings.patchCov = 10^modelSettings.patchCov;
-                mSettings.accCov = 10^modelSettings.patchCov;
+                mSettings.accCov = 10^modelSettings.accCov;
         end
     
         % True model for simulation
@@ -413,7 +386,11 @@ if simulationSettings.simulate ==  true
 
     % Distubrance input generation (function at the bottom)
     Udist = generateInput(simulationSettings);  % Disturbance input
-       
+    
+    if simulationSettings.lowpassInput == true
+        Udist = lowpass(Udist,simulationSettings.cutoffFrequency,1/simulationSettings.dt);
+    end
+
     % Set all models!
     l = 1;
     for i = 1:simulationSettings.nPatchCov
@@ -491,17 +468,17 @@ if simulationSettings.simulate ==  true
                             AKF.QuTune = AKF.QuTuned2;
                     end
 
-                    AKF.S = [SYS.S(:,2:end); zeros(SYS.nu*(AKF.nd+1),SYS.ny-1)];
-            
+                    AKF.S = [SYS.S(:,2:end); zeros(SYS.nu*(AKF.nd),SYS.ny-1)];
+
                     % Generate temporary ss model for input dynamics (higher order
                     % derivatives can then be modelled!
                         uA = [zeros(SYS.nu*AKF.nd,SYS.nu),eye(SYS.nu*AKF.nd);
                                 zeros(SYS.nu,SYS.nu*(AKF.nd+1))];
                         uB = [zeros(AKF.nd*SYS.nu,SYS.nu);
                                 eye(SYS.nu)];
-                        uC = zeros(1,SYS.nu*AKF.nd);
+                        uC = [eye(SYS.nu),zeros(SYS.nu,(AKF.nd)*SYS.nu)];
                         uD = [];
-                        Uss = ss(uA,uB,[],[]);
+                        Uss = ss(uA,uB,uC,uD);
                         Uss = c2d(Uss,dt,SYS.modelSettings.c2dMethod); % Checked!
             
                     AKF.Dv = SYS.Dv(2:end,2:end);   % Snip off laser measurement
@@ -516,8 +493,9 @@ if simulationSettings.simulate ==  true
                     AKF.Q = eye(size(SYS.Q,1))*AKF.QTune;                                           % Do you trust your model?
                     AKF.Qu = [1,zeros(1,nPatches);
                               zeros(nPatches,1),zeros(nPatches,nPatches)]*AKF.QuTune;                  % Input covariance!!
-            
-                    AKF.Q = [SYS.Q,zeros(SYS.nq,SYS.nu); % Assemble augmented Q matrix
+                    AKF.Qu(end-nPatches+1:end,end-nPatches+1:end) = eye(nPatches,nPatches)*1e-20;
+
+                    AKF.Q = [AKF.Q,zeros(SYS.nq,SYS.nu); % Assemble augmented Q matrix
                         zeros(SYS.nu,SYS.nq),AKF.Qu];
                 
                     if AKF.stationary == true
@@ -531,7 +509,11 @@ if simulationSettings.simulate ==  true
                     else
                         % No additional setup for non-stationary augmented kalman filter.
                     end
-            
+
+%                     AKFksys = minreal(ss(AKF.A,AKF.Bw,AKF.C,[],SYS.simulationSettings.dt));
+%                     [~,~,P0_AKF] = kalman(AKFksys,AKF.Q,AKF.R,AKF.S);
+%                     AKF.P0kalman = P0_AKF;
+
                     if l == 1
                         fprintf(['    Augmented Kalman Filter-> \n'...
                                  '        Stationary: %d \n'...
@@ -595,6 +577,15 @@ if simulationSettings.simulate ==  true
                          '        QuTune: %1.1e \n'],DKF.QuTune)
                     end
                 end
+                
+                % Try and get the steady-state idare solution for both
+                % systems, but only main system works. 
+                % DKFkalmansys = ss(DKF.A,[DKF.B DKF.Bw],DKF.C,[DKF.D,zeros(SYS.ny-1,SYS.nq)],dt,'InputName','w','OutputName','y');
+                % [~,~,~,~,P0_DKF] = kalman(DKFkalmansys,DKF.Q,DKF.R,[]);
+
+                % DKFukalmansys = ss(DKF.uA,[DKF.uB,zeros(SYS.nu*(DKF.nd+1),SYS.nq)],DKF.D*DKF.uC,[zeros(SYS.ny-1,SYS.nu*(DKF.nd+1)), DKF.C],dt,'InputName','z','OutputName','y');
+                % [~,~,~,~,Pu0_DKF] = kalman(DKFukalmansys,DKF.Qu,DKF.R,[]);
+
                 SYS.DKF = DKF;
             
                 % GDF setup------------------------------------------------------------
@@ -607,12 +598,13 @@ if simulationSettings.simulate ==  true
                     GDF.Q = eye(size(SYS.Q,1))*GDF.QTune;
                     GDF.R = SYS.R(2:end,2:end)*GDF.RTune;                             % Snipp off laser measurement
             
-                    SYS.GDF = GDF;
+                    
                     if l == 1
                         fprintf('    Giljins de Moor filter-> \n')
                     end
                 end
-               
+                SYS.GDF = GDF;
+
                 l = l+1;
                 modelMat(i,j,k) = SYS; % put back in modelVec for safe keeping. 
             end
@@ -645,7 +637,8 @@ if simulationSettings.simulate ==  true
 
     % Simulate!!===========================================================
     l = 0;
-    for i = 1:a                              
+    for i = 1:a
+    %parfor i = 1:a                              
         for j = 1:b
             for k = 1:c
                 SYS = modelMat(i,j,k); % Pick model to simulate
@@ -656,10 +649,7 @@ if simulationSettings.simulate ==  true
                 SYS.simulationData.fit(:,1,SYS.simulationSettings.iterations+2) = std(SYS.simulationData.fit(:,1,1:end-1),0,3);
                 SYS.simulated = 1;
                 modelMat(i,j,k) = SYS; % put back in modelVec for safe keeping.   
-
-                % See how far along we are!
-                
-            end
+             end
         end
     end
     
@@ -692,13 +682,13 @@ if simulationSettings.nModels > 1
         else
             % RMSE
             fits = zeros(simulationSettings.nPatchCov,simulationSettings.nAccCov,simulationSettings.nDerivatives);
-             for i = 1:simulationSettings.nPatchCov
+            for i = 1:simulationSettings.nPatchCov
                 for j = 1:simulationSettings.nAccCov
                     for k = 1:simulationSettings.nDerivatives+1
                         fits(i,j,k) = modelMat(i,j,k).simulationData.fit(z,1,1);
                     end
                 end
-             end
+            end
         end
         
         d = [];
@@ -717,8 +707,9 @@ if simulationSettings.nModels > 1
                         ylabel('NRMSE [-]')
                         patchAx = gca;
                         set(patchAx,'xScale','log')
-%                         set(patchAx,'yScale','log')
-                        ylim([0,1])
+                        set(patchAx,'yScale','log')
+                        ylim(gca,[1e-3,1])
+                        xlim(gca,[min(patchCovariances),max(patchCovariances)])
                     end
 
                     if simulationSettings.monteCarlo == true
@@ -729,7 +720,7 @@ if simulationSettings.nModels > 1
                         patch(patchAx,[patchCovariances,fliplr(patchCovariances)],[meansk'+sigmask',fliplr(meansk'-sigmask')],color,'edgeAlpha',0);
                         alpha(0.1)
                     else
-                        semilogx(patchAx,patchCovariances,fits(:,1,k),'-o','Color',color)
+                        loglog(patchAx,patchCovariances,fits(:,1,k),'-o','Color',color)
                     end
     
                 case {'Acc'}

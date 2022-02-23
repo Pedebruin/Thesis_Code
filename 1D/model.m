@@ -1,4 +1,4 @@
-classdef model < handle & dynamicprops & matlab.mixin.Copyable
+ classdef model < handle & dynamicprops & matlab.mixin.Copyable
     % a 'model' contains all information on a model
     %{
         This class is made to bundle all information relating a system in
@@ -102,12 +102,13 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
             q_GDF = ones(obj.nq,1)*obj.simulationSettings.obsOffset;       % Initial state estimate for GDF
                 u_GDF = zeros(obj.nu,1);
             P_KF = zeros(obj.nq);                                        % Initial P matrix kalman filter
-            P_AKF = zeros(obj.nq+obj.nu*(obj.AKF.nd+1));
-            P_DKF = zeros(obj.nq);
-                Pu_DKF = zeros(obj.nu*(obj.DKF.nd+1));
-            Pq_GDF  = zeros(obj.nq);
-            Pu_GDF = zeros(obj.nu);
-            Pqu_GDF = zeros(obj.nq,obj.nu);
+            P_AKF = [eye(obj.nq)*obj.AKF.P0, zeros(obj.nq,obj.nu*(obj.AKF.nd+1));
+                    zeros(obj.nu*(obj.AKF.nd+1),obj.nq),eye(obj.nu*(obj.AKF.nd+1))*obj.AKF.Pu0];
+            P_DKF = ones(obj.nq)*obj.DKF.P0;
+                Pu_DKF = ones(obj.nu*(obj.DKF.nd+1))*obj.DKF.Pu0;
+            Pq_GDF  = ones(obj.nq)*obj.GDF.Pq0;
+                Pu_GDF = ones(obj.nu)*obj.GDF.Pu0;
+                Pqu_GDF = ones(obj.nq,obj.nu)*obj.GDF.Pqu0;
             
             W = mvnrnd(zeros(obj.nq,1),obj.Q,T/dt+1)';
             V = mvnrnd(zeros(obj.ny,1),obj.R,T/dt+1)';
@@ -233,7 +234,7 @@ classdef model < handle & dynamicprops & matlab.mixin.Copyable
                         Pu_1_DKF = Pu_DKF;
 
                         % Time update of INPUT estimate
-                        u_DKF = obj.DKF.uA*u_1_DKF;                 % Random walk!
+                        u_DKF = obj.DKF.uA*u_1_DKF;               
                         Pu_DKF = obj.DKF.uA*Pu_1_DKF*obj.DKF.uA' + obj.DKF.uB*obj.DKF.Qu*obj.DKF.uB';
                       
                         % Measurement update of INPUT estimate

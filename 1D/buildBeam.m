@@ -106,7 +106,7 @@ for i = 1:numEl
     end
     
     % Apply boundary condition to first node
-    if n1 == 1                                      % If the node we are looking at is the first one
+    if n1 == 1
         % Prescribe 0 to displacement and rotation
         Ke(1:2,:) = zeros(2,4);                   
         Ke(:,1:2) = zeros(4,2);
@@ -116,6 +116,19 @@ for i = 1:numEl
         Me(1:2,:) = zeros(2,4);
         Me(:,1:2) = zeros(4,2);
         Me(1:2,1:2) = eye(2);
+    end
+
+    % Apply boundary condition to last node
+    if n2 == numNodes                                      % If the node we are looking at is the first one
+        % Prescribe 0 to displacement and rotation
+        Ke(4,:) = zeros(1,4);                   
+        Ke(:,4) = zeros(4,1);
+        Ke(4,4) = 1;                   % Fix only rotation
+        
+        % Prescribe 0 to acceleration aswell
+        Me(4,:) = zeros(1,4);
+        Me(:,4) = zeros(4,1);
+        Me(4,4) = 1;
     end
 
     % Assembly. Since everything is nicely connected in sequence (1to2to3..) , the
@@ -144,12 +157,12 @@ else
     error('Number of elements is smaller then the number of modes requested. Modal decomposition will not work!')
 end
 
-Phi = Phi(:,1:Nmodes+2);                % Select only Nmodes+2 modes
-omega2 = omega2(1:Nmodes+2,1:Nmodes+2); % Select only Nmodes+2 natural frequencies
+Phi = Phi(:,1:Nmodes+3);                % Select only Nmodes+2 modes
+omega2 = omega2(1:Nmodes+3,1:Nmodes+3); % Select only Nmodes+2 natural frequencies
 
 %Snip off weird modes 
-Phi = Phi(:,3:end);                     % First 2 modes are not correct, so snip them off
-omega2 = omega2(3:end,3:end);           % Same for natural frequencies
+Phi = Phi(:,4:end);                     % First 2 modes are not correct, so snip them off
+omega2 = omega2(4:end,4:end);           % Same for natural frequencies
 
 % Check first natural frequency
 f = diag(sqrt(omega2)/(2*pi));
@@ -270,9 +283,10 @@ sys = ss(A,B,C,D);
 
 % Define true process and measurement noise covariances
 Q = eye(Nmodes*2)*modelSettings.wcov;
-R = [modelSettings.laserCov,zeros(1,nPatches+nAcc);
-    zeros(nPatches,1), eye(nPatches)*modelSettings.patchCov, zeros(nPatches,nAcc);            % Allow for different covariances for different sensors!
-    zeros(nAcc,1), zeros(nAcc,nPatches), eye(nAcc)*modelSettings.accCov]; 
+% R = [modelSettings.laserCov,zeros(1,nPatches+nAcc);
+%     zeros(nPatches,1), eye(nPatches)*modelSettings.patchCov, zeros(nPatches,nAcc);            % Allow for different covariances for different sensors!
+%     zeros(nAcc,1), zeros(nAcc,nPatches), eye(nAcc)*modelSettings.accCov]; 
+R = blkdiag(modelSettings.laserCov, eye(nPatches).*modelSettings.patchCov, eye(nAcc)*modelSettings.accCov);
 S = zeros(Nmodes*2,1+nPatches+nAcc);
 
 
