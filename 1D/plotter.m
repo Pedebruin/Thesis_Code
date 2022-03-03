@@ -66,8 +66,15 @@ if isempty(findobj('Name','Simulation results'))
     subplot(12,3,[11,12,14,15]);
         hold on
         grid on
-        ylabel 'V'
-        title 'Piezo outputs'   
+        switch model.modelSettings.gauges
+            case {'piezo'}
+                ylabel 'V'
+                title 'Piezo measurement' 
+            case {'resistive'}
+                ylabel '$$\epsilon$$'
+                title 'Strain measurement' 
+        end
+    
         piezoAx = gca;
         piezoAx.Tag = 'piezoAx';
         xlim([0,simulationSettings.T]);

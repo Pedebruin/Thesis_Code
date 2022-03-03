@@ -182,14 +182,21 @@ Phi = Phi/(Phi'*M*Phi);     % Normalise w.r.t. mass matrix
 % Piezo in & outputs
     % Sensor equation according to K. Aktas
     [intS,~] = shapeFunctions();
-    H = 1e6;                                        % Arbitrary gain (needs setup validation)
     z = sBeam.h/2+sBeam.ph;                         % Effective height
-    d31 = -180e-12;                                 % Piezo coupling d
-    s11 = 16.1e-12;
-    e31 = d31/s11;                                  % Piezo coupling e
-    w = sBeam.pb;                                   % width of beam
-    S = H*z*e31*w*intS;                       % Need to check this again (derivation)!
+
+    switch modelSettings.gauges
+        case {'piezo'}                                  % If piezo measurement
+            H = 1e6;                                        % Arbitrary gain (needs setup validation)
+            d31 = -180e-12;                                 % Piezo coupling d
+            s11 = 16.1e-12;
+            e31 = d31/s11;                                  % Piezo coupling e
+            w = sBeam.pb;                                   % width of beam
+            S = - H*z*e31*w*intS;                       % Need to check this again (derivation)!
     
+        case {'resistive'}
+            S = - z*intS;
+    end
+
     % Actuator equation according to K. Aktas
     [~,intG] = shapeFunctions();
     Ep = sBeam.pE;
@@ -429,7 +436,7 @@ function [intS,intG] = shapeFunctions()
             0, 1, 2*Lss, 3*Lss^2];
     shapeFunction = [1, y, y^2, y^3]/Ainterp;
     dshapeFunction = diff(shapeFunction,y);
-    ddshapeFunction = diff(shapeFunction,y);
+    ddshapeFunction = diff(dshapeFunction,y);
     
     intS = int(ddshapeFunction,0,Lss);
     intG = int(dshapeFunction,0,Lss);

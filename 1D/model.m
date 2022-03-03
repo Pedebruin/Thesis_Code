@@ -271,8 +271,9 @@
                         Pq_GDF = [obj.GDF.A obj.GDF.B]*[Pq_1_GDF ,Pqu_GDF; Pqu_GDF' Pu_GDF]*[obj.GDF.A'; obj.GDF.B'] + obj.GDF.Q;
         
                         % Input estimation
+                        F = obj.GDF.D;
                         Rt_GDF = obj.GDF.C*Pq_GDF*obj.GDF.C' + obj.GDF.R;
-                        M_GDF = (obj.GDF.D'/Rt_GDF*obj.GDF.D)\obj.GDF.D'/Rt_GDF;
+                        M_GDF = (F'/Rt_GDF*F)\F'/Rt_GDF;
                         u_GDF = M_GDF*(y(2:end)-obj.GDF.C*q_GDF);
                         Pu_GDF = eye(obj.nu)/(obj.GDF.D'/Rt_GDF*obj.GDF.D);
 
@@ -440,11 +441,11 @@
 
             % Plot input force in beam plot
             if obj.plotSettings.inputForce == true
-                forcex = obj.sys.B(:,1)'*q;
+                forcex = obj.sys.B(obj.Nmodes+1:end,1)'*q(1:obj.Nmodes);
                 forcey = obj.modelSettings.forceHeight*obj.modelSettings.L;
 
-                f1 = [forcex-obj.modelSettings.L/15,forcey];
-                f2 = [forcex,forcey];
+                f2 = [forcex+obj.modelSettings.L/15,forcey];
+                f1 = [forcex,forcey];
                 df = f2-f1;
                 
                 color = [0.6350 0.0780 0.1840];
@@ -453,13 +454,13 @@
                     'Color',color);
                 simPlots = [simPlots, force];
 
-                forceText = text(Ax,f1(1),f1(2),'F','HorizontalAlignment',...
-                    'right',...
+                forceText = text(Ax,f2(1),f2(2),'F','HorizontalAlignment',...
+                    'left',...
                     'Color',color);
                 simPlots = [simPlots, forceText];
             end
         end
-
+        
         %% Plot the bode plot of this model
         function bod = showBode(obj,Ax)
             if isempty(Ax)
@@ -484,7 +485,7 @@
             % Plot analytical omega1
             xline(Ax,obj.analyticalf1)
         end
-
+        
         %% Plot a given mode shape
         function modePlot = showMode(obj,Ax,n)
             if isempty(Ax)
