@@ -15,7 +15,7 @@ The author of this code is Pim de Bruin.
 The main model parameters are found at the top of the script.
 
 The patches can be placed through modelSettings.patches. This is a vector
-with the bottom location of each patch in natural coordinates. the length
+with the bottom location of each patch in natural coordinates of the beam. the length
 of this vector determines the amount of patches. The size of the patches is 
 determined through patchL. Same goes for the accelerometers and
 modelSettings.Acc. 
@@ -36,3 +36,6 @@ This script requires:
     Parallel computing toolbox (for parfor)
 
 # How to run:
+For simple purposes, just run the MAIN.m script in the 1D folder of the master branch. This runs
+one simulation with multiple observers, and shows some nice plots. The project is continued in the
+pim-dev branch, which is not always configured in the most user-friendly way due to ongoing developments. 
