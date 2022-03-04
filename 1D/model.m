@@ -114,9 +114,11 @@
             V = mvnrnd(zeros(obj.ny,1),obj.R,T/dt+1)';
             
             if m == 1
-                fprintf(['\n Simulating %s ... \n'...
-                        '    patchCov: %1.1e \n'...
-                        '    accCov: %1.1e \n'],obj.name,obj.modelSettings.patchCov,obj.modelSettings.accCov);
+                fprintf(['\n Simulating %s ... \n'],obj.name);
+            if obj.simulationSettings.batch == true
+                fprintf('    QuTune: %1.1e \n',obj.AKF.QuTune)
+            end
+
             end
             startTime = tic;
             
