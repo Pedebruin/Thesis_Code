@@ -148,12 +148,19 @@
                     % Also save full states for plotting (in q space, so modal)
                     qfull(:,i) = q;
                     yfull(:,i) = y;
+                    
+                    % 
+                    if obj.modelSettings.posMeasurement == true
+                        y_obs = y;
+                    else
+                        y_obs = y(2:end);
+                    end
 
                 % Run state estimators
                     % obj.MF ----------------------------------------------------------
                     if any(ismember(obj.simulationSettings.observer,'MF'))
                         % Modal filter
-                        q_MF = obj.MF.Psi*y(2:end);
+                        q_MF = obj.MF.Psi*y_obs;
         
                         % Save state and output
                         qfull_MF(:,i) = q_MF;
@@ -163,7 +170,7 @@
                     % LO ----------------------------------------------------------
                     if any(ismember(obj.simulationSettings.observer,'LO'))
                         q_LO = q1_LO;       % Also for the observers
-                        q1_LO = obj.dsys_obs.A*q_LO + obj.dsys_obs.B*U + obj.LO.L*(y(2:end)-obj.dsys_obs.C*q_LO-obj.dsys_obs.D*U);
+                        q1_LO = obj.dsys_obs.A*q_LO + obj.dsys_obs.B*U + obj.LO.L*(y_obs-obj.dsys_obs.C*q_LO-obj.dsys_obs.D*U);
                         yfull_LO(:,i) = obj.dsys_sim.C*q_LO + obj.dsys_sim.D*U; % Estimated output
                         qfull_LO(:,i) = q_LO;       % Save estimated state
                     end 
@@ -177,7 +184,7 @@
                             warning('NEEDS TO BE CHECKED')
 
                             % Steady state kalman filter (Same as LO, but with kalman gain)
-                            q_KF = obj.dsys_obs.A*q_1_KF + obj.dsys_obs.B*U + obj.KF.K*(y(2:end)-obj.dsys_obs.C*q_KF-obj.dsys_obs.D*U_1);
+                            q_KF = obj.dsys_obs.A*q_1_KF + obj.dsys_obs.B*U + obj.KF.K*(y_obs-obj.dsys_obs.C*q_KF-obj.dsys_obs.D*U_1);
         
                             % Save state and output
                             qfull_KF(:,i) = q_KF;                    
@@ -189,7 +196,7 @@
                             P_KF = obj.dsys_obs.A*P_1_KF*obj.dsys_obs.A'+obj.KF.Bw*obj.KF.Q*obj.KF.Bw';
 
                             % Measurement update
-                            q_KF = q_KF + P_KF*obj.dsys_obs.C'/(obj.dsys_obs.C*P_KF*obj.dsys_obs.C'+obj.KF.R)*(y(2:end)-obj.dsys_obs.C*q_KF-obj.dsys_obs.D*U);
+                            q_KF = q_KF + P_KF*obj.dsys_obs.C'/(obj.dsys_obs.C*P_KF*obj.dsys_obs.C'+obj.KF.R)*(y_obs-obj.dsys_obs.C*q_KF-obj.dsys_obs.D*U);
                             P_KF = P_KF - P_KF*obj.dsys_obs.C'/(obj.dsys_obs.C*P_KF*obj.dsys_obs.C'+obj.KF.R)*obj.dsys_obs.C*P_KF;
               
                             % Save state and output
@@ -217,13 +224,18 @@
                             P_AKF = obj.AKF.A*P_1_AKF*obj.AKF.A'+obj.AKF.Bw*obj.AKF.Q*obj.AKF.Bw';
 
                             % Measurement update
-                            q_AKF = q_AKF + P_AKF*obj.AKF.C'/(obj.AKF.C*P_AKF*obj.AKF.C'+obj.AKF.R)*(y(2:end)-obj.AKF.C*q_AKF);
+                            q_AKF = q_AKF + P_AKF*obj.AKF.C'/(obj.AKF.C*P_AKF*obj.AKF.C'+obj.AKF.R)*(y_obs-obj.AKF.C*q_AKF);
                             P_AKF = P_AKF - P_AKF*obj.AKF.C'/(obj.AKF.C*P_AKF*obj.AKF.C'+obj.AKF.R)*obj.AKF.C*P_AKF;
                
                             % Save state and output
-                            qfull_AKF(:,i) = q_AKF;                    
-                            yfull_AKF(:,i) = [obj.dsys_sim.C(1,:),zeros(1,obj.nu*(obj.AKF.nd+1));
-                                            obj.AKF.C]*q_AKF;
+                            qfull_AKF(:,i) = q_AKF;     
+
+                            if obj.modelSettings.posMeasurement == true
+                                yfull_AKF(:,i) = obj.AKF.C*q_AKF;
+                            else
+                                yfull_AKF(:,i) = [obj.dsys_sim.C(1,:),zeros(1,obj.nu*(obj.AKF.nd+1));
+                                                obj.AKF.C]*q_AKF;
+                            end
                         end
                     end
         
@@ -242,7 +254,7 @@
                         % Measurement update of INPUT estimate
                         Ku_DKF = Pu_DKF*obj.DKF.uC'*obj.DKF.D'/(obj.DKF.D*obj.DKF.uC*Pu_DKF*obj.DKF.uC'*obj.DKF.D' + obj.DKF.R);
         
-                        u_DKF = u_DKF + Ku_DKF*(y(2:end)-obj.DKF.C*q_1_DKF-obj.DKF.D*obj.DKF.uC*u_DKF);
+                        u_DKF = u_DKF + Ku_DKF*(y_obs-obj.DKF.C*q_1_DKF-obj.DKF.D*obj.DKF.uC*u_DKF);
                         Pu_DKF = Pu_DKF - Ku_DKF*obj.DKF.D*obj.DKF.uC*Pu_DKF;
 
                         % Time update STATE estimate
@@ -252,14 +264,18 @@
                         % Measurement update STATE estimate
                         K_DKF = P_DKF*obj.DKF.C'/(obj.DKF.C*P_DKF*obj.DKF.C' + obj.DKF.R);
                         
-                        q_DKF = q_DKF + K_DKF*(y(2:end)-obj.DKF.C*q_DKF-obj.DKF.D*obj.DKF.uC*u_DKF);
+                        q_DKF = q_DKF + K_DKF*(y_obs-obj.DKF.C*q_DKF-obj.DKF.D*obj.DKF.uC*u_DKF);
                         P_DKF = P_DKF - K_DKF*obj.DKF.C*P_DKF;
              
                         % Save state,estimated input and output 
                         qfull_DKF(:,i) = q_DKF;    
                         ufull_DKF(:,i) = u_DKF;
-                        yfull_DKF(:,i) = [obj.dsys_sim.C(1,:);
-                                        obj.DKF.C]*q_DKF; 
+                        if obj.modelSettings.posMeasurement == true
+                            yfull_DKF(:,i) = obj.DKF.C*q_DKF;
+                        else
+                            yfull_DKF(:,i) = [obj.dsys_sim.C(1,:);
+                                            obj.DKF.C]*q_DKF; 
+                        end
                     end
                     
                     % GDF----------------------------------------------------------
@@ -276,20 +292,25 @@
                         F = obj.GDF.D;
                         Rt_GDF = obj.GDF.C*Pq_GDF*obj.GDF.C' + obj.GDF.R;
                         M_GDF = (F'/Rt_GDF*F)\F'/Rt_GDF;
-                        u_GDF = M_GDF*(y(2:end)-obj.GDF.C*q_GDF);
+                        u_GDF = M_GDF*(y_obs-obj.GDF.C*q_GDF);
                         Pu_GDF = eye(obj.nu)/(obj.GDF.D'/Rt_GDF*obj.GDF.D);
 
                         % Measurement update
                         K_GDF = Pq_GDF*obj.GDF.C'/Rt_GDF;
-                        q_GDF = q_GDF + K_GDF*(y(2:end)-obj.GDF.C*q_GDF-obj.GDF.D*u_GDF);
+                        q_GDF = q_GDF + K_GDF*(y_obs-obj.GDF.C*q_GDF-obj.GDF.D*u_GDF);
                         Pq_GDF = Pq_GDF - K_GDF*(Rt_GDF - obj.GDF.D*Pu_GDF*obj.GDF.D')*K_GDF';
                         Pqu_GDF = -K_GDF*obj.GDF.D*Pu_GDF;
         
                         % Save state, estimated input and output
                         qfull_GDF(:,i) = q_GDF;    
                         ufull_GDF(:,i) = u_GDF;
-                        yfull_GDF(:,i) = [obj.dsys_sim.C(1,:);
-                                        obj.GDF.C]*q_GDF; 
+
+                        if obj.modelSettings.posMeasurement == true
+                            yfull_GDF(:,i) = obj.GDF.C*q_GDF;
+                        else
+                            yfull_GDF(:,i) = [obj.dsys_sim.C(1,:);
+                                            obj.GDF.C]*q_GDF; 
+                        end
                     end
         
                 % Update waitbar and check cancel button

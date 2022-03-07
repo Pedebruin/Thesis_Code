@@ -28,6 +28,8 @@ h = 1e-3;     % Beam thickness
     modelSettings.gauges = "resistive";                         % "resistive" or "piezo" gauges? 
     modelSettings.nsElementsP = 3;                              % Number of smart elements per patch
     modelSettings.strainRate = false;                           % Measure strain rate instead of strain. (For current amplifiers)
+    modelSettings.posMeasurement = false;                        % Use position measurement for the observers?
+
     sBeam = copy(Beam); sBeam.name = 'sBeam';   
     switch modelSettings.gauges
         case {'piezo'}                                          % When using piezo patches
@@ -61,7 +63,7 @@ h = 1e-3;     % Beam thickness
     modelSettings.forceHeight = 1;                              % Height of the input force.
     
     modelSettings.wcov = 0;                              % Process noise covariance
-    modelSettings.laserCov = 0;                          % Laser covariance                                          
+    modelSettings.laserCov = 1e-12;                          % Laser covariance                                          
     
     modelSettings.L = L;                                    
     modelSettings.b = b;
@@ -114,7 +116,7 @@ simulationSettings.simulate = true;                     % Simulate at all?
         simulationSettings.nDerivatives = 0;            % Highest derivative order? (Also does all lower derivatives) 
         simulationSettings.QuMin = 1e1;                 % Loop from
         simulationSettings.QuMax = 1e12;                % Loop to
-        simulationSettings.nLcurve = 20;                 % In .. steps
+        simulationSettings.nLcurve = 25;                 % In .. steps
 
     % Run each simulation multiple times for noise realisations?
     simulationSettings.monteCarlo = false;           % Run every simulation multiple times to get a mean and monteCarlo interval
@@ -125,7 +127,7 @@ simulationSettings.simulate = true;                     % Simulate at all?
         simulationSettings.nWorkers = 4;                % Number of cores to run this on?
     
     % Observer settings (Settings for the observers) %%%%%%%%%%%%%%%%%%%%%%
-    simulationSettings.observer = ["MF" "LO" "KF" "AKF" "DKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
+    simulationSettings.observer = ["AKF" "DKF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
         simulationSettings.obsOffset = 1e-10;               % Initial state offset (we know its undeformed at the beginning, so probably 0); 
     
         % LO settings
@@ -144,7 +146,7 @@ simulationSettings.simulate = true;                     % Simulate at all?
         AKF.P0 = 0;
         AKF.Pu0 = 0;
 
-        AKF.QuTuned0 = 1e10;                             % For the zeroth derivative 
+        AKF.QuTuned0 = 5e10;                             % For the zeroth derivative 
         AKF.QuTuned1 = 1e15;                             % For the first derivative
         AKF.QuTuned2 = 1e20;                             % For the second derivative
         
@@ -177,7 +179,7 @@ simulationSettings.simulate = true;                     % Simulate at all?
         DKF.P0 = 0;
         DKF.Pu0 = 0;
 
-        DKF.QuTuned0 = 1e10;                                                                         
+        DKF.QuTuned0 = 5e10;                                                                         
         DKF.QuTuned1 = 1e10;
         DKF.QuTuned2 = 1e20;
 
@@ -229,7 +231,7 @@ plotSettings.plot = true;                                   % Plot the simulatio
     plotSettings.statePlot = true;                          % Plot the state evolutions
         plotSettings.states = 3;                            % First # states to be plotted
 
-    plotSettings.modes = 5;                                 % Plot the mode shapes?? [number of modes]
+    plotSettings.modes = 0;                                 % Plot the mode shapes?? [number of modes]
         plotSettings.modeAmp = 5e-4;                        % Amplification factor for plot. 
 
     plotSettings.alphaMin = 0.3;                            % start of alpha interp
@@ -307,8 +309,12 @@ for i = 1:a % First iteration parameter
             % Erroneous model for the observers
             errSYS = model(); % create model object
             [errSYS,~] = buildBeam(mSettings,simulationSettings,plotSettings,Beam,sBeam,errSYS); % Fill model object
-            SYS.dsys_obs = errSYS.dsys_sim(2:end,1:end);    % Put only erronuous model in SYS and cut off laser measurement
-           
+            
+            if modelSettings.posMeasurement == true
+                SYS.dsys_obs = errSYS.dsys_sim;    % Put only erronuous model in SYS and cut off laser measurement
+            else
+                SYS.dsys_obs = errSYS.dsys_sim(2:end,1:end);    % Put only erronuous model in SYS and cut off laser measurement
+            end
             % Give summary of model
             if l == 1
                 numEl = mSettings.numEl;
@@ -347,11 +353,17 @@ for i = 1:a % First iteration parameter
             % KF setup-------------------------------------------------------------
             if any(ismember(SYS.simulationSettings.observer,"KF"))
                 KF.Q = SYS.Q*KF.QTune;
-                KF.R = SYS.R(2:end,2:end)*KF.RTune;                          % Snip off laser measurement
-                KF.S = SYS.S(:,2:end);
+                if modelSettings.posMeasurement == true
+                    KF.R = SYS.R*KF.RTune;
+                    KF.S = SYS.S;
+                    KF.Dv = SYS.Dv;
+                else
+                    KF.R = SYS.R(2:end,2:end)*KF.RTune;                          % Snip off laser measurement
+                    KF.S = SYS.S(:,2:end);
+                    KF.Dv = SYS.Dv(2:end,2:end); 
+                end
                 KF.Bw = SYS.Bw;
-                KF.Dv = SYS.Dv(2:end,2:end); 
-                  
+                
                 if KF.stationary == true
                     % Find stationary kalman gain by solving discrete algebraic ricatti equation
                     % (p.162 M.Verhaegen
@@ -391,7 +403,6 @@ for i = 1:a % First iteration parameter
                     AKF.nd = k-1;                       % Change derivative order with k
                 end
 
-                AKF.S = [SYS.S(:,2:end); zeros(SYS.nu*(AKF.nd),SYS.ny-1)];
     
                 % Generate temporary ss model for input dynamics (higher order
                 % derivatives can then be modelled!
@@ -404,15 +415,22 @@ for i = 1:a % First iteration parameter
                     Uss = ss(uA,uB,uC,uD);
                     Uss = c2d(Uss,simulationSettings.dt,mSettings.c2dMethod); % Checked!
         
-                AKF.Dv = SYS.Dv(2:end,2:end);   % Snip off laser measurement
+                if modelSettings.posMeasurement == true % Depending on settings, snip off laser measurement. 
+                    AKF.R = SYS.R*AKF.RTune; 
+                    AKF.S = [SYS.S; zeros(SYS.nu*(AKF.nd),SYS.ny-1)];
+                    AKF.Dv = SYS.Dv;
+                else
+                    AKF.R = SYS.R(2:end,2:end)*AKF.RTune;                                       % Do you trust your measurements?
+                    AKF.S = [SYS.S(:,2:end); zeros(SYS.nu*(AKF.nd),SYS.ny-1)];
+                    AKF.Dv = SYS.Dv(2:end,2:end);
+                end
+
                 AKF.Bw = [SYS.Bw,zeros(SYS.nq,SYS.nu);
                     zeros(SYS.nu*(AKF.nd+1),SYS.nq),Uss.B];
-        
                 AKF.A = [SYS.dsys_obs.A, SYS.dsys_obs.B,zeros(SYS.nq,SYS.nu*AKF.nd);
-                        zeros(SYS.nu*(AKF.nd+1),SYS.nq),Uss.A];
+                    zeros(SYS.nu*(AKF.nd+1),SYS.nq),Uss.A];
                 AKF.C = [SYS.dsys_obs.C, SYS.dsys_obs.D, zeros(SYS.ny-1,SYS.nu*AKF.nd)];
                                           
-                AKF.R = SYS.R(2:end,2:end)*AKF.RTune;                                       % Do you trust your measurements?
                 AKF.Q = eye(size(SYS.Q,1))*AKF.QTune;                                           % Do you trust your model?
                 AKF.Qu = [1,zeros(1,nPatches);
                           zeros(nPatches,1),zeros(nPatches,nPatches)]*AKF.QuTune;                  % Input covariance!!
@@ -480,6 +498,12 @@ for i = 1:a % First iteration parameter
                     Uss = ss(uA,uB,uC,[]);
                     Uss = c2d(Uss,simulationSettings.dt,mSettings.c2dMethod);
                 
+                if modelSettings.posMeasurement == true
+                    DKF.R = SYS.R*DKF.RTune;                             
+                else
+                    DKF.R = SYS.R(2:end,2:end)*DKF.RTune;                             
+                end
+
                 DKF.uA = Uss.A;
                 DKF.uB = Uss.B; 
                 DKF.uC = [eye(SYS.nu),zeros(SYS.nu,(DKF.nd)*SYS.nu)];
@@ -487,7 +511,6 @@ for i = 1:a % First iteration parameter
                 DKF.D = SYS.dsys_obs.D;
                 DKF.B = SYS.dsys_obs.B;
                 DKF.Q = eye(size(SYS.Q,1))*DKF.QTune;
-                DKF.R = SYS.R(2:end,2:end)*DKF.RTune;                             % Snipp off laser measurement
                 DKF.Qu = eye(SYS.nu)*DKF.QuTune;
         
                 if l == 1
@@ -505,8 +528,12 @@ for i = 1:a % First iteration parameter
                 GDF.D = SYS.dsys_obs.D;
         
                 GDF.Q = eye(size(SYS.Q,1))*GDF.QTune;
-                GDF.R = SYS.R(2:end,2:end)*GDF.RTune;                             % Snipp off laser measurement
-                
+                if modelSettings.posMeasurement == true
+                    GDF.R = SYS.R*GDF.RTune;
+                else
+                    GDF.R = SYS.R(2:end,2:end)*GDF.RTune;                             % Snipp off laser measurement
+                end
+
                 if l == 1
                     fprintf('    Giljins de Moor filter-> \n')
                 end
@@ -576,10 +603,9 @@ if simulationSettings.simulate ==  true
 
     D = parallel.pool.DataQueue;
 
-
-
     % Simulate!!===========================================================
     l = 0;
+    %for i = 1:a
     parfor i = 1:a                              
         for j = 1:b
             for k = 1:c

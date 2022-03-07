@@ -39,3 +39,10 @@ This script requires:
 For simple purposes, just run the MAIN.m script in the 1D folder of the master branch. This runs
 one simulation with multiple observers, and shows some nice plots. The project is continued in the
 pim-dev branch, which is not always configured in the most user-friendly way due to ongoing developments. 
+
+Running the main scipt in the Master branch generates only one simulation. If you would like to generate an 
+L-curve for tuning, the batch setting should be turned on. This sweeps over a range of tuning parameters 
+and plots all simulations. This should be used in combination with the parallel setting to reduce computation time. 
+
+To investigate the influence of the actual noise realisation, the monteCarlo setting should be turned on. This 
+runs every simulation multiple times and plots, instead of only one simulation, the average and one sdt in the L-curve plot. 
