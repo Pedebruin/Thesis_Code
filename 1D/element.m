@@ -129,15 +129,13 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
            bplot = plot(ax,x,y,'Color',color,'LineWidth',2);
            p = bplot;
 
-
-
            % Plot nodes
            if plotSettings.plotNodes == true
                nplot = plot(ax,x(1),y(1),'o','Color',[0 0.4470 0.7410]);
                p = [p,bplot, nplot];
                
                if plotSettings.nodeNumbers == true
-                   ntext = text(ax,x(1)+0.01,y(1),num2str(obj.number),'horizontalAlignment','left');
+                   ntext = text(ax,x(1)+0.002,y(1),num2str(obj.number),'horizontalAlignment','left');
                    p = [p,ntext];
                end
            end
@@ -147,7 +145,7 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
                if obj.sBeam == false
                    color = 'k';
                end
-               etext = text(ax,mean(x)+0.01,mean(y),num2str(obj.number),'horizontalAlignment','left','Color',color);
+               etext = text(ax,mean(x)+0.002,mean(y),num2str(obj.number),'horizontalAlignment','left','Color',color);
                p = [p,etext];
            end
 
@@ -156,7 +154,7 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
                if obj.sBeam == true
                    if obj.number == obj.piezoElements(1) % If first element of piezo
                        ty = length(obj.piezoElements)*obj.L/2+obj.pos(2,1);
-                       ptext = text(ax,mean(x)-0.02,ty,num2str(obj.piezoNumber),'horizontalAlignment','right','Color',color);
+                       ptext = text(ax,mean(x)-0.002,ty,num2str(obj.piezoNumber),'horizontalAlignment','right','Color',color);
                        p = [p,ptext];
                    end
                end
@@ -176,7 +174,7 @@ classdef element < handle & dynamicprops & matlab.mixin.Copyable
 
                        % Accelerometer number
                        if plotSettings.accNumbers == true
-                          atext = text(ax,accx-0.01,accy,num2str(obj.accNumber(i)),'horizontalAlignment','right','Color',[0.4660 0.6740 0.1880]);
+                          atext = text(ax,accx-0.002,accy,num2str(obj.accNumber(i)),'horizontalAlignment','right','Color',[0.4660 0.6740 0.1880]);
                           p = [p,atext];
                        end
                    end

@@ -1,7 +1,3 @@
-clear
-close all
-set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',12);  
-
 %{
     Since some of the simulation code such as the filter setup and the
     configuration is also necessary for the simulink files. The script is
@@ -10,22 +6,101 @@ set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',12);
         buildBeam.m
         buildFilters.m
 %}
+if exist('configuredExternally','var') == 1 && configuredExternally == true
+    % Just leave the parameters that are in the workspace. 
+else
+    % Load all settings from the configuration file configure.m. All necessary
+    % settings for this simulation, the model setup, filter setup and plotting
+    % can be found there!
+
+    clear
+    close all
+    set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',15);  
+    
+    % Configure the settings!
+    [Beam, sBeam, modelSettings,...
+            simulationSettings, plotSettings, simulinkSettings,...
+            LO,KF,AKF,DKF,GDF,...
+            Cd, configuredExternally] = configure(0);
+end
 
 now = char(datetime('now'));
 fprintf([now,'-----------------------------\n'...
     'Setting up model...\n'])
 startScript= tic;
-addpath('./Extras')
 
-% Load all settings from the configuration file configure.m. All necessary
-% settings for this simulation, the model setup, filter setup and plotting
-% can be found there!
-configure;
+stored = fileparts(which('MAIN.m'));
+chdir(stored)
+addpath('./Extras/')
+addpath('./../c2000/')
+addpath('./../c2000/Experiments/')
+
+%% autoTune Filters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+if simulationSettings.tuneFilters == true
+    %{ 
+        Find optimal values for filter parameters
+        Use standard parameters as initial guess, then optimise further untill
+        convergence. 
+    %}
+    options = optimset('Display','final',...
+                       'MaxFunEvals',simulationSettings.maxFunEvals,...
+                       'PlotFcn',@optimplotfval,...
+                       'TolFun',eps);
+
+    for i = 1:length(simulationSettings.filtersToTune)
+        switch simulationSettings.filtersToTune
+            case "AKF"
+                disp(["Tuning AKF parameters... (Might take a while)"])
+                filterTune = "AKF";
+                AKF0 = [AKF.QTune,AKF.RTune];
+
+                AKFopt = fminsearch(@(args)optfunc(args,filterTune),AKF0,options);
+
+            %{
+            Previous opt:
+                QTuneAKF= 1.86e-11e-9;
+                RTuneAKF= 2.26e4;
+                QuTuned0AKF= 1e10;
+            %}
+
+            case "DKF"
+                disp(["Tuning DKF parameters... (Might take a while)"])
+                filterToTune= "DKF";
+                DKF0 = [DKF.QTune,DKF.RTune];
+
+                DKFopt = fminsearch(@(args)optfunc(args,filterToTune),DKF0,options);
+
+                %{
+                Previous opt:
+                    QTuneDKF:3.0297e-13 
+                    RTuneDKF: 1.1147e4
+                    QuTuneDKF: 1e1
+                %}
+
+            case "GDF"
+                disp(["Tuning GDF parameters... (Might take a while)"])
+                filterToTune= "GDF";
+                GDF0 = [GDF.QTune,GDF.RTune];
+
+                GDFopt = fminsearch(@(args)optfunc(args,filterToTune),GDF0,options);
+
+                %{
+                Previous opt:
+                    QTuneGDF: 1.90e-3
+                    RTuneGDF: 1.65e14
+                %}
+        end
+    end
+  
+        disp(["Bloody Tuned"])
+else
+    % Do nothing, and let the standard parameters take the wheel!
+end
 
 %% Build models %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %{ 
 For meta-analysis build multiple models with just different parameters. Put
-them all in the modelMat arra of models
+them all in the modelMat array of models
 %}
 
 % Batch switch
@@ -48,13 +123,35 @@ else
 end
 
 % Initial error switch
-if simulationSettings.initialError == false
+if simulationSettings.initialError == false || strcmp(simulationSettings.data,"Real")
     simulationSettings.obsOffset = 0;
 end
 
 % MonteCarlo switch
 if simulationSettings.monteCarlo == false
     simulationSettings.iterations = 1;
+end
+
+% Input measured noise covariance if real data
+if strcmp(simulationSettings.data,"Real")
+    load('noiseSample1.mat')
+
+    laserNoise = squeeze(data{5}.Values.Data);
+    laserNoise = laserNoise - mean(laserNoise);
+    laserCov = cov(laserNoise');
+    
+    patchNoise = double(squeeze(data{2}.Values.Data));
+    patchNoise = patchNoise -mean(patchNoise);
+    patchCov = cov(patchNoise');
+
+    accNoise = double(squeeze(data{1}.Values.Data))/simulationSettings.accSensitivity;
+    accNoise = accNoise -mean(accNoise);
+    accNoise = lowpass(accNoise,1e3,1e4);
+    accCov = cov(accNoise');
+
+    modelSettings.accCov = accCov;
+    modelSettings.laserCov = laserCov;
+    modelSettings.patchCov = patchCov;
 end
 
 % Set up modelMat (matrix with all models)
@@ -78,7 +175,7 @@ for i = 1:a % First iteration parameter
             %% Model setup
             mSettings = modelSettings;  % Copy of modelSettings to avoid overwriting the real thing. 
             mSettings.l = l;            % Also keep track of the iteration number for every model
-
+            
             % True model for simulation
             SYS = model(); % create model object
             [SYS, mSettings] = buildBeam(mSettings,simulationSettings,plotSettings,Beam,sBeam,SYS); % Fill model object 
@@ -87,7 +184,7 @@ for i = 1:a % First iteration parameter
             originalBeam = copy(Beam);
             
             % Set modelling error
-            if simulationSettings.modelError == true
+            if simulationSettings.modelError == true && strcmp(simulationSettings.data,"Simulated")
                 Beam.rho = Beam.rho*mSettings.rhoError;                         % Beam mass error
                 mSettings.mAcc = mSettings.mAcc*mSettings.mAccError;    % Accelerometer mass error
                 mSettings.Acc = mSettings.Acc - mSettings.AccError;     % Acceleromter position error
@@ -102,6 +199,7 @@ for i = 1:a % First iteration parameter
             else
                 SYS.dsys_obs = errSYS.dsys_sim(2:end,1:end);    % Put only erronuous model in SYS and cut off laser measurement
             end
+            
             % Give summary of model
             if l == 1
                 numEl = mSettings.numEl;
@@ -117,12 +215,11 @@ for i = 1:a % First iteration parameter
             SYS.nq = size(SYS.dsys_sim.A,1);
             
             %% Filter setup
-
             % OverWrite derivativeOrder & QuTune
             AKF.nd = AKF.derivativeOrder;
             if simulationSettings.batch == true
                 AKF.QuTune = LcurveQus(i);          % Change QuTune with i
-                AKF.nd = k-1;                       % Change derivative order with k
+                AKF.nd = 0;%k-1;                       % Change derivative order with k
             end
 
             % OverWrite derivativeOrder & QuTune
@@ -151,32 +248,46 @@ modelSettings = mSettings;
 
 %% Set up all models to be simulated
 if simulationSettings.simulate ==  true
-    fprintf(['\n Setting up simulation...\n'...
+
+    % Distubrance input generation (function at the bottom)
+    switch simulationSettings.data
+        case {"Real"}
+            load(simulationSettings.dataset);
+            t = data{1}.Values.Time;
+            T = t(end);
+            dt = mean(diff(t));
+            
+            Udist = -squeeze(data{4}.Values.Data)/simulinkSettings.matchingGain;
+            
+        case {"Simulated"}
+            % Handy defenitions & Unpacking
+            T = simulationSettings.T;
+            dt = simulationSettings.dt;
+            t = 0:dt:T;
+            Udist = generateInput(simulationSettings);  % Disturbance input
+            
+            if simulationSettings.lowpassInput == true
+                Udist = lowpass(Udist,simulationSettings.cutoffFrequency,1/simulationSettings.dt);
+            end
+            
+            fprintf(['\n Setting up simulation...\n'...
             '    Noise: %d\n'...
             '    Offset: %1.1e\n'...
             '    Model Error: %d\n'],modelMat(1).simulationSettings.noise,modelMat(1).simulationSettings.obsOffset,modelMat(1).simulationSettings.modelError);
-
-    % Handy defenitions & Unpacking
-    T = simulationSettings.T;
-    dt = simulationSettings.dt;
-    t = 0:dt:T;
+        
+        otherwise 
+            warning('SimulationSettings.data is not spelled correctly!')
+    end
 
     fprintf(['    T: %.2f s \n'...
-    '    dt: %.4f s\n'...
-    '    Time steps: %d \n'],simulationSettings.T, simulationSettings.dt, length(t))
+             '    dt: %.4f s\n'...
+             '    Time steps: %d \n'],T, dt, length(t))
 
     if simulationSettings.batch == true
     fprintf(['    Batch:\n'...
              '        Number of models: %d \n'...
              '        Number of iterations per model: %d \n'...
              '        Number of total simulations: %d \n '],numel(modelMat),simulationSettings.iterations,simulationSettings.iterations*numel(modelMat));
-    end
-
-    % Distubrance input generation (function at the bottom)
-    Udist = generateInput(simulationSettings);  % Disturbance input
-    
-    if simulationSettings.lowpassInput == true
-        Udist = lowpass(Udist,simulationSettings.cutoffFrequency,1/simulationSettings.dt);
     end
    
     %% Actual simulation loop!
@@ -199,20 +310,26 @@ if simulationSettings.simulate ==  true
 
     % Simulate!!===========================================================
     l = 0;
-    %for i = 1:a
-    parfor i = 1:a                              
+    for i = 1:a
+%     parfor i = 1:a                              
         for j = 1:b
             for k = 1:c
                 SYS = modelMat(i,j,k); % Pick model to simulate
-                for m = 1:d 
-                    SYS = SYS.simulate(Udist,m);
+                for m = 1:d
+                    warning('off','MATLAB:nearlySingularMatrix')
+                    SYS = SYS.simulate(Udist,m); % Here the real magic happens!
                 end
                 SYS.simulationData.fit(:,1,SYS.simulationSettings.iterations+1) = mean(SYS.simulationData.fit(:,1,:),3);
                 SYS.simulationData.fit(:,1,SYS.simulationSettings.iterations+2) = std(SYS.simulationData.fit(:,1,1:end-1),0,3);
-                SYS.simulated = 1;
-                modelMat(i,j,k) = SYS; % put back in modelVec for safe keeping.   
+                SYS.simulated = true;
+                modelMat(i,j,k) = SYS; % put back in modelMat for safe keeping.   
              end
         end
+    end
+    
+    % Save for later use if made with real dataset!
+    if strcmp(modelMat(1).simulationSettings.data,"Real") && simulationSettings.saveResult == true
+        save(['./dataSets/modelMat_',simulationSettings.dataset,],'modelMat')
     end
     
     %% Make a nice plot of the simulation!
@@ -365,7 +482,7 @@ Adds these signals together in an imput signal U!
 
         A = simulationSettings.harmonicAmp;
         f = simulationSettings.harmonicFreq;
-        uHarmonic(startSample:end) = A*sin(2*pi*t/f);
+        uHarmonic(startSample:end) = A*sin(2*pi*t*f);
 
         if length(simulationSettings.harmonicTime) > 1                          % If end time is defined
             stopSample = floor(simulationSettings.harmonicTime(2)/dt);
@@ -396,6 +513,7 @@ end
 
 % Plot the input and its derivatives
 function [] = plotInput(model,nd)
+
     simulationSettings = model.simulationSettings;
     
     if model.plotSettings.trueInputPlot == false
@@ -439,4 +557,87 @@ function [] = plotInput(model,nd)
     end
     xlabel('Time [s]')
 
+end
+
+% Optimise filters 
+function [fit] = optfunc(args,filter)
+%{
+    args = [QTune, RTune, QuTuned0];
+    Optimisation function that takes in set of parameters, simulates it to
+    Udist and spits out the fit!
+%}
+    if any(args < 0)
+        % Can't have negative covariances
+        fit = NaN;
+    else
+        switch filter
+            case "AKF"
+                params = ["QTuneAKF","RTuneAKF"];%["QTuneAKF", "RTuneAKF","QuTuned0AKF"];
+            case "DKF"
+                params = ["QTuneDKF","RTuneDKF"];%["QTuneDKF", "RTuneDKF","QuTuned0DKF"];
+            case "GDF"
+                params = ["QTuneGDF", "RTuneGDF"];
+        end
+    
+        [Beam, sBeam, modelSettings,...
+        simulationSettings, plotSettings,simulinkSettings...
+        ,LO,KF,AKF,DKF,GDF,~, ~] = configure(1,params,args,"Ssteel");
+    
+        AKF.nd = 0;
+        DKF.nd = 0;
+        modelSettings.l = 1;
+        simulationSettings.observer = filter;
+    
+        % Input measured noise covariance if real data
+        if strcmp(simulationSettings.data,"Real")
+            load('noiseSample1.mat')
+        
+            laserNoise = squeeze(data{5}.Values.Data);
+            laserNoise = laserNoise - mean(laserNoise);
+            laserCov = cov(laserNoise');
+            
+            patchNoise = double(squeeze(data{2}.Values.Data));
+            patchNoise = patchNoise -mean(patchNoise);
+            patchCov = cov(patchNoise');
+        
+            accNoise = double(squeeze(data{1}.Values.Data))/simulationSettings.accSensitivity;
+            accNoise = accNoise -mean(accNoise);
+            accNoise = lowpass(accNoise,1e3,1e4);
+            accCov = cov(accNoise');
+        
+            modelSettings.accCov = accCov;
+            modelSettings.laserCov = laserCov;
+            modelSettings.patchCov = patchCov;
+        end
+    
+        SYS = model(); % create model object
+        [SYS,~] = buildBeam(modelSettings,simulationSettings,plotSettings,Beam,sBeam,SYS); % Fill model object 
+        
+        if modelSettings.posMeasurement == true
+            SYS.dsys_obs = SYS.dsys_sim;
+        else
+            SYS.dsys_obs = SYS.dsys_sim(2:end,1:end);    % Cut off laser measurement
+        end
+    
+        SYS.ny = size(SYS.dsys_sim,1);
+        SYS.nu = size(SYS.dsys_sim,2);
+        SYS.nq = size(SYS.dsys_sim.A,1);
+    
+        SYS = buildFilters(SYS,LO,KF,AKF,DKF,GDF);    
+    
+        load(simulationSettings.dataset); % Load dataset to tune on
+        Udist = -squeeze(data{4}.Values.Data)/simulinkSettings.matchingGain;
+    
+        warning('off','MATLAB:nearlySingularMatrix')
+        SYS = SYS.simulate(Udist,1);
+        warning('on','MATLAB:nearlySingularMatrix')
+    
+        if SYS.simulationData.broken == true
+            fit = NaN;
+        else
+            fit = SYS.simulationData.fit;
+            fprintf('P = [%10.4e, %10.4e]\n', args(1),args(2));
+            disp(['Fit = ',num2str(fit(1))])
+        end
+    end
 end

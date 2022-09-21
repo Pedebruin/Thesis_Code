@@ -84,11 +84,11 @@ function [SYS] = buildFilters(SYS,LO,KF,AKF,DKF,GDF)
     
         if SYS.modelSettings.posMeasurement == true % Depending on settings, snip off laser measurement. 
             AKF.R = SYS.R*AKF.RTune; 
-            AKF.S = [SYS.S; zeros(SYS.nu*(AKF.nd),SYS.ny-1)];
+            AKF.S = [SYS.S; zeros(SYS.nu*(AKF.nd+1),SYS.ny)];
             AKF.Dv = SYS.Dv;
         else
             AKF.R = SYS.R(2:end,2:end)*AKF.RTune;                                       % Do you trust your measurements?
-            AKF.S = [SYS.S(:,2:end); zeros(SYS.nu*(AKF.nd),SYS.ny-1)];
+            AKF.S = [SYS.S(:,2:end); zeros(SYS.nu*(AKF.nd+1),SYS.ny-1)];
             AKF.Dv = SYS.Dv(2:end,2:end);
         end
     
@@ -99,12 +99,12 @@ function [SYS] = buildFilters(SYS,LO,KF,AKF,DKF,GDF)
         AKF.C = [SYS.dsys_obs.C, SYS.dsys_obs.D, zeros(SYS.ny-1,SYS.nu*AKF.nd)];
                                   
         AKF.Q = eye(size(SYS.Q,1))*AKF.QTune;                                           % Do you trust your model?
-        AKF.Qu = [1,zeros(1,nPatches);
-                  zeros(nPatches,1),zeros(nPatches,nPatches)]*AKF.QuTune;                  % Input covariance!!
-        AKF.Qu(end-nPatches+1:end,end-nPatches+1:end) = eye(nPatches,nPatches)*1e-20;
+        AKF.Qu = 1*AKF.QuTune;                  % Input covariance!!
     
         AKF.Q = [AKF.Q,zeros(SYS.nq,SYS.nu); % Assemble augmented Q matrix
             zeros(SYS.nu,SYS.nq),AKF.Qu];
+        AKF.P0_m = [eye(SYS.nq)*AKF.P0, zeros(SYS.nq,SYS.nu*(AKF.nd+1));
+                    zeros(SYS.nu*(AKF.nd+1),SYS.nq),eye(SYS.nu*(AKF.nd+1))*AKF.Pu0];
     
         if AKF.stationary == true
             % Find stationary kalman gain by solving discrete algebraic ricatti equation
@@ -130,10 +130,11 @@ function [SYS] = buildFilters(SYS,LO,KF,AKF,DKF,GDF)
     
     if any(ismember(SYS.simulationSettings.observer,"DKF"))
         DKF.A = SYS.dsys_obs.A;
+        DKF.B = SYS.dsys_obs.B;
         DKF.C = SYS.dsys_obs.C;
+        DKF.D = SYS.dsys_obs.D;
         DKF.Bw = SYS.Bw;
-                    
-        % Pick tuning parameter
+
         if SYS.simulationSettings.batch == false
             switch DKF.nd
                 case 0
@@ -147,7 +148,13 @@ function [SYS] = buildFilters(SYS,LO,KF,AKF,DKF,GDF)
                     DKF.QuTune = DKF.QuTuned2;
             end
         end
-   
+
+        %{ 
+        Code still reminent from multiple derivative days, still works but
+        sometimes reaks havok so don't include it. Just set uA, uB, uC and
+        uD to 1 to not have influence on the filter. 
+        % Pick tuning parameter
+        %}
             % Generate temporary ss model for input dynamics (higher order
             % derivatives can then be modelled!
             uA = [zeros(SYS.nu*DKF.nd,SYS.nu),eye(SYS.nu*DKF.nd);
@@ -160,21 +167,19 @@ function [SYS] = buildFilters(SYS,LO,KF,AKF,DKF,GDF)
             uD = [];
             Uss = ss(uA,uB,uC,[]);
             Uss = c2d(Uss,SYS.simulationSettings.dt,SYS.modelSettings.c2dMethod);
-        
+
+        DKF.Q = eye(size(SYS.Q,1))*DKF.QTune;
         if SYS.modelSettings.posMeasurement == true
             DKF.R = SYS.R*DKF.RTune;                             
         else
             DKF.R = SYS.R(2:end,2:end)*DKF.RTune;                             
         end
-    
-        DKF.uA = Uss.A;
-        DKF.uB = Uss.B; 
-        DKF.uC = [eye(SYS.nu),zeros(SYS.nu,(DKF.nd)*SYS.nu)];
         
-        DKF.D = SYS.dsys_obs.D;
-        DKF.B = SYS.dsys_obs.B;
-        DKF.Q = eye(size(SYS.Q,1))*DKF.QTune;
-        DKF.Qu = eye(SYS.nu)*DKF.QuTune;
+        DKF.uA = 1;
+        DKF.uB = 1; 
+        DKF.uC = 1;
+        
+        DKF.Qu = 1*DKF.QuTune;
     
         if SYS.modelSettings.l == 1
             fprintf(['    Dual Kalman Filter-> \n'...

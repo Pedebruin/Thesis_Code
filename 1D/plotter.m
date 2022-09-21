@@ -36,7 +36,7 @@ u_GDF = model.simulationData.ufull_GDF(:,:,m);
 nPatches = length(model.modelSettings.patches);
 nAcc = length(modelSettings.Acc);
 Nmodes = modelSettings.Nmodes;
-t = 0:simulationSettings.dt:simulationSettings.T;
+t = model.simulationData.t;
 
 % Setting up figure
 if isempty(findobj('Name','Simulation results'))
@@ -52,14 +52,14 @@ if isempty(findobj('Name','Simulation results'))
         title 'Beam plot'
         beamAx = gca;
         beamAx.Tag = 'beamAx';
-    subplot(12,3,[2,3,5,6])
+    subplot(12,3,[2,3,5,6]) % laser measurement
         hold on
         grid on
         ylabel 'displasement [m]'
         title 'Laser Measurement'
         measurementAx = gca;
         measurementAx.Tag = 'measurementAx';
-        xlim([0,simulationSettings.T]);
+        xlim([model.simulationData.t(1),model.simulationData.t(end)]);
         if min(y(1,:)) ~= max(y(1,:))
             ylim(1.1*[min(y(1,:)),max(y(1,:))])
         end
@@ -77,7 +77,7 @@ if isempty(findobj('Name','Simulation results'))
     
         piezoAx = gca;
         piezoAx.Tag = 'piezoAx';
-        xlim([0,simulationSettings.T]);
+        xlim([model.simulationData.t(1),model.simulationData.t(end)]);
     subplot(12,3,[20,21,23,24])
         hold on
         grid on
@@ -86,7 +86,7 @@ if isempty(findobj('Name','Simulation results'))
         title 'Accelometer Outputs'   
         accAx = gca;
         accAx.Tag = 'accAx';
-        xlim([0,simulationSettings.T]);
+        xlim([model.simulationData.t(1),model.simulationData.t(end)]);
     subplot(12,3,28:36)
         bodeAx = gca;
         bodeAx.Tag = 'bodeAx';
@@ -103,7 +103,7 @@ end
     
 %% Bode plot!
 if modelNumber == 1
-    [~] = model.showBode(bodeAx);
+    [~] = model.showBode(bodeAx,1,1);
 end
 
 %% Beam plot!
@@ -189,7 +189,7 @@ if plotSettings.statePlot == true
             hold on
             grid on
             ylabel(['$\eta$',num2str(i)])  
-            xlim([0,simulationSettings.T]);
+            xlim([model.simulationData.t(1),model.simulationData.t(end)]);
             if min(qfull(i,:)) ~= max(qfull(i,:))
                 ylim(1.1*[min(qfull(i,:)),max(qfull(i,:))])  
             else
@@ -270,7 +270,7 @@ if plotSettings.inputSequence == true
         title 'System input sequence'
         inputAx = gca;
         inputAx.Tag = 'inputAx';
-        xlim([0,simulationSettings.T]);
+        xlim([model.simulationData.t(1),model.simulationData.t(end)]);
         plot(inputAx,t,Udist,'k'); 
     
         movegui(c,'northeast');

@@ -24,7 +24,6 @@ function bodeFigure(K,M,Beam,elements,modelSettings,modes)
     truncated.userData = 'Truncated';
     systems{end-1} = truncated;
     
-        
     plotoptions = bodeoptions;
     plotoptions.Title.String = 'Modal decomposition of flexible structure';
     plotoptions.Title.Interpreter = 'latex';
@@ -110,12 +109,7 @@ function bodeFigure(K,M,Beam,elements,modelSettings,modes)
 
         % Find mode shapes and natural frequencies
         if modelSettings.Nmodes <= numEl
-            if modelSettings.dispInput == true
-        %         [Phi,omega2] = eigs(K,M,modelSettings.Nmodes+1,'smallestabs');      % Compensate for 1 weird mode
                 [Phi,omega2] = eig(K,M);
-            else
-                [Phi,omega2] = eig(K,M);
-            end
         else
             error('Number of elements is smaller then the number of modes requested. Modal decomposition will not work!')
         end

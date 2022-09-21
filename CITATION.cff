@@ -1,9 +1,0 @@
-cff-version: 1.2.0
-message: "This is used for citation"
-authors:
-- family-names: "Pim"
-  given-names: "de Bruin"
-title: "Thesis code"
-version: 1.0
-date-released: 17/02
-url: "https://github.com/Pedebruin/Thesis_Code"

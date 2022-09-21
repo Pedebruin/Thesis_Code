@@ -104,6 +104,14 @@ for i = 1:numEl
         El.accEta = eta;
         El.accNumber = accNumber;
     end
+
+    % Add mass of the stage (Optional)
+    if n2 == numNodes % If last node
+        alpha = El.L;
+        phi = [1, alpha, alpha^2, alpha^3]*El.Ainv;
+        MeStage = modelSettings.stageMass*(phi'*phi);
+        Me = Me + MeStage;
+    end
     
     % Apply boundary condition to first node
     if n1 == 1
@@ -132,7 +140,7 @@ for i = 1:numEl
     end
 
     % Assembly. Since everything is nicely connected in sequence (1to2to3..) , the
-    % elemenental matrices stay nicely together in a diagonal fasion.
+    % elemenental matrices stay nicely together in a diagonal fashion.
     K(n1*2-1:n2*2,n1*2-1:n2*2) = K(n1*2-1:n2*2,n1*2-1:n2*2) + Ke;   % K
     M(n1*2-1:n2*2,n1*2-1:n2*2) = M(n1*2-1:n2*2,n1*2-1:n2*2) + Me;   % M
     
@@ -171,7 +179,7 @@ S = Beam.h;
 lambda = 1.87510407;
 analyticalf1 = lambda^2/(2*pi*L^2)*sqrt(Beam.E*I/(Beam.rho*S));
   
-if abs(f(1) - analyticalf1) > 0.001 && nPatches == 0 && nAcc == 0 % Check only when there are no patches
+if abs(f(1) - analyticalf1) > 0.001 && nPatches == 0 && nAcc == 0  && modelSettings.stageMass == 0 % Check only when there are no patches
     % Is only checked if there are no patches or accelerometers present!
     warning('Eigenfrequencies do not correspond')
 end
@@ -194,7 +202,7 @@ Phi = Phi/(Phi'*M*Phi);     % Normalise w.r.t. mass matrix
             S = - H*z*e31*w*intS;                       % Need to check this again (derivation)!
     
         case {'resistive'}
-            S = - z*intS;
+            S = z*intS;
     end
 
     % Actuator equation according to K. Aktas
@@ -270,8 +278,8 @@ Phi = Phi/(Phi'*M*Phi);     % Normalise w.r.t. mass matrix
 %% Construct full system 
 A = [zeros(Nmodes),eye(Nmodes);
     -omega2,-Cmodal];
-B = [zeros(Nmodes,nPatches+1);                          
-    Phi'*[Bext,Bg]];                             % [Force input, Piezo inputs]
+B = [zeros(Nmodes,1);                          
+    Phi'*Bext];                             % [Force input]
 
 if modelSettings.strainRate == true
     C = [Cmeasurement*Phi, zeros(1,Nmodes);                 % Laser measurement
@@ -283,19 +291,15 @@ else
     -Cacc*Phi*omega2, -Cacc*Phi*Cmodal];                % Accelerometer outputs
 end
 
-D = [zeros(nPatches+1,size(B,2));                       % No throughput laser,base and piezo measurements
-    Cacc*(Phi*Phi')*[Bext,Bg]];                  % Throughput for acceleration measurements!
+D = [zeros(nPatches+1,1);                       % No throughput for the laser
+    Cacc*(Phi*Phi')*Bext];                  % Throughput for acceleration measurements!
 
 sys = ss(A,B,C,D);
 
 % Define true process and measurement noise covariances
 Q = eye(Nmodes*2)*modelSettings.wcov;
-% R = [modelSettings.laserCov,zeros(1,nPatches+nAcc);
-%     zeros(nPatches,1), eye(nPatches)*modelSettings.patchCov, zeros(nPatches,nAcc);            % Allow for different covariances for different sensors!
-%     zeros(nAcc,1), zeros(nAcc,nPatches), eye(nAcc)*modelSettings.accCov]; 
 R = blkdiag(modelSettings.laserCov, eye(nPatches).*modelSettings.patchCov, eye(nAcc)*modelSettings.accCov);
 S = zeros(Nmodes*2,1+nPatches+nAcc);
-
 
 % Noise influence matrices Bw and Dv
 Bw = eye(Nmodes*2);
@@ -349,6 +353,7 @@ functions.
 dsys = c2d(sys,simulationSettings.dt,modelSettings.c2dMethod);            % Discretise using ZOH
 SYS.dsys_sim = dsys;                                                 % Make new system
 
+SYS.nq = size(SYS.dsys_sim.A,1);
 %% Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Get element lengths for adaptive mesh (Taking smart patches into account)
@@ -373,7 +378,7 @@ function [Ls,sElements] = getLengths(modelSettings,sBeam)
         end
     
         % Catch some errors here already
-        if sum(gaps)+nPatches*sBeam.L*nsElementsP - L > 0
+        if round(sum(gaps)+nPatches*sBeam.L*nsElementsP - L,4) > 0
             error('Gaps are not correct (do not sum up to total length of beam)')
         end
         for i = 1:length(gaps)

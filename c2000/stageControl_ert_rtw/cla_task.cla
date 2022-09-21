@@ -1,0 +1,58 @@
+#include "cla_header.h"
+#include "F2837xD_Cla_typedefs.h"
+#if __TI_COMPILER_VERSION__ < 15009000
+
+typedef unsigned char _Bool;
+
+#endif
+
+#include "F2837xD_device.h"
+#include "F2837xD_Cla_defines.h"
+#include "CLAmath.h"
+
+/* CLA Interrupt block */
+__interrupt void Cla1Task1 ( void )
+{
+  /* Call the system: <S3>/cla_subsystem */
+  /* __mdebugstop(); */
+
+  /* Output and update for function-call system: '<S3>/cla_subsystem' */
+  {
+    /* local block i/o variables */
+    real_T rtb_DiscreteStateSpace;
+
+    /* DiscreteStateSpace: '<S59>/Discrete State-Space' */
+    {
+      rtb_DiscreteStateSpace = (stageControl_P.DiscreteStateSpace_C[0])*
+        stageControl_DW.DiscreteStateSpace_DSTATE[0]
+        + (stageControl_P.DiscreteStateSpace_C[1])*
+        stageControl_DW.DiscreteStateSpace_DSTATE[1];
+      rtb_DiscreteStateSpace += stageControl_P.DiscreteStateSpace_D*input1;
+    }
+
+    /* Saturate: '<S59>/Saturation' */
+    if (rtb_DiscreteStateSpace > stageControl_P.Saturation_UpperSat) {
+      Cla_out = stageControl_P.Saturation_UpperSat;
+    } else if (rtb_DiscreteStateSpace < stageControl_P.Saturation_LowerSat) {
+      Cla_out = stageControl_P.Saturation_LowerSat;
+    } else {
+      Cla_out = rtb_DiscreteStateSpace;
+    }
+
+    /* End of Saturate: '<S59>/Saturation' */
+
+    /* Update for DiscreteStateSpace: '<S59>/Discrete State-Space' */
+    {
+      real_T xnew[2];
+      xnew[0] = (stageControl_P.DiscreteStateSpace_A[0])*
+        stageControl_DW.DiscreteStateSpace_DSTATE[0]
+        + (stageControl_P.DiscreteStateSpace_A[1])*
+        stageControl_DW.DiscreteStateSpace_DSTATE[1];
+      xnew[0] += stageControl_P.DiscreteStateSpace_B*input1;
+      xnew[1] = (stageControl_P.DiscreteStateSpace_A[2])*
+        stageControl_DW.DiscreteStateSpace_DSTATE[0];
+      (void) memcpy(&stageControl_DW.DiscreteStateSpace_DSTATE[0], xnew,
+                    sizeof(real_T)*2);
+    }
+  }
+}
