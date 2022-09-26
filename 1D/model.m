@@ -583,7 +583,7 @@
                 DKFcorrCoeff = corrcoef(meanErrSections(2,:)',meanAccelerationSections');
                 GDFcorrCoeff = corrcoef(meanErrSections(3,:)',meanAccelerationSections');
 
-                xlim([4.8,54.8])
+
                 figure()
                 subplot(2,1,1)
                     hold on

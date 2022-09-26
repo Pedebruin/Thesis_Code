@@ -15,25 +15,49 @@ clear modelMat
 mAc = [meanAccelerationSections1, meanAccelerationSections2];
 mEr = [meanErrSections1, meanErrSections2];
 
-
+for i = [1,4]
 figure()
+    title('Filter error and Mean absolute acceleration')
     hold on
-    sgtitle('Mean absolute acceleration and filter error values')
-    subplot(3,1,1)
-        hold on
-        bar(mAc')
-        xlim([0.5,6.5])
-    subplot(3,1,[2 3])    
-        hold on
-        b = bar(mEr','FaceColor','flat');
-        b.CData(2,:) = [0.4940 0.1840 0.5560];
-        xlim([0.5,6.5])
-        xticklabels([1:6])
-        ylabel('')
-        xlabel('Data set section')
+
+    yyaxis left
+    br = bar([i:i+2],mAc(i:i+2)');
+    br.FaceAlpha = 0.2;
+    br.EdgeAlpha = br.FaceAlpha;
+    br.EdgeColor = [0 0.4470 0.7410];
+%     br.ZData = ones(size(br.XData));
 
 
+    ylim([0,max(mAc)])
+    ylabel('mean absolute acceleration [m/s$^2$]')
 
+    yyaxis right
+    bl = bar([i:i+2],mEr(:,i:i+2)','FaceColor','flat');
+    for j = 1:3
+        bl(1).CData(j,:) = [0.4940 0.1840 0.5560];
+        bl(2).CData(j,:) = [0.3010 0.7450 0.9330];
+        bl(3).CData(j,:) = [0.6350 0.0780 0.1840];
+
+        bl(1).EdgeColor = [0.8500 0.3250 0.0980];
+        bl(2).EdgeColor = [0.8500 0.3250 0.0980];
+        bl(3).EdgeColor = [0.8500 0.3250 0.0980];
+
+%         bl(1).ZData = zeros(size(bl(1).XData));
+%         bl(2).ZData = zeros(size(bl(2).XData));
+%         bl(3).ZData = zeros(size(bl(3).XData));
+    end
+
+    xlim([i-0.5,i+3-0.5])
+    ylim([0,max(max(mEr))*1.5])
+
+    xticks(i:i+2)
+    ylabel('')
+    xlabel('Data set section')
+    ylabel('mean absolute filter error [m]')
+    grid on
+
+    set(gca, 'SortMethod', 'depth')
+end
 
 AKFcorrCoeff = corrcoef(mEr(1,:)',mAc');
 DKFcorrCoeff = corrcoef(mEr(2,:)',mAc');
