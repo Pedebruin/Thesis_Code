@@ -77,13 +77,13 @@ function [Beam, sBeam, modelSettings,...
                     stageMass = values(i);
                 case "patchL" % Patch length
                     patchL = values(i);
-                case "patches"
+                case "patches" % Patch location
                     patches = values(i);
-                case "simulate"
-                    simulate = values(i);
-                case "QTuneAKF"
+                case "simulate" % Simulate or not?
+                    simulate = values(i); 
+                case "QTuneAKF" % Covariance tuning parameter AKF
                     QTuneAKF = values(i);
-                case "RTuneAKF"
+                case "RTuneAKF" % 
                     RTuneAKF = values(i);
                 case "QuTuned0AKF"
                     QuTuned0AKF = values(i);
@@ -172,7 +172,7 @@ function [Beam, sBeam, modelSettings,...
         modelSettings.c2dMethod = 'ZOH';
         
         %% Observer settings
-        simulationSettings.observer = ["AKF" "DKF" "GDF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
+        simulationSettings.observer = ["MF" "LO" "KF" "AKF" "DKF" "GDF"];    % ["MF" "LO" "KF" "AKF" "DKF" "GDF"] Does need to be in order
             simulationSettings.obsOffset = 1e-10;               % Initial state offset (we know its undeformed at the beginning, so probably 0); 
         
             % MF settings
@@ -183,8 +183,8 @@ function [Beam, sBeam, modelSettings,...
     
             % KF settings
             KF.stationary = true;	                        % Use stationary KF? 
-            KF.QTune = 1e-10;
-            KF.RTune = 1e10;
+            KF.QTune = 1.86e-9;
+            KF.RTune = 2.26e4;
     
             % AKF settings
             AKF.stationary = false;                         % Use stationary AKF? (DOES NOT WORK YET)

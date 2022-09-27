@@ -629,7 +629,7 @@
             end
         else
             % When data is simulated, also make nice plots
-            obj.simulationSettings.observer = ["AKF" "DKF" "GDF"];
+            obj.simulationSettings.observer = ["KF""AKF" "DKF" "GDF"];
             simData = obj.simulationData;
             
             truePos = simData.yfull(1,:);
@@ -720,7 +720,7 @@
             figure()
                 hold on
                 grid on
-                b = bar(1:4,simFits','FaceColor','flat');
+                b = bar(1:4,simFits,'FaceColor','flat');
 
                 xtips = [];
                 ytips = [];
@@ -737,11 +737,11 @@
                     end
                 end
 
-                meanFits = mean(simFits,2);
-                for j = 1:length(obj.simulationSettings.observer)
-                    yline(meanFits(j),'--',obj.simulationSettings.observer(j),'Color',colors(j,:),...
-                        'LabelHorizontalAlignment','left','LabelVerticalAlignment','middle','LineWidth',1.5)
-                end
+%                 meanFits = mean(simFits,2);
+%                 for j = 1:length(obj.simulationSettings.observer)
+%                     yline(meanFits(1),'--',obj.simulationSettings.observer(j),'Color',colors(j,:),...
+%                         'LabelHorizontalAlignment','left','LabelVerticalAlignment','middle','LineWidth',1.5)
+%                 end
 
                 xlim([0.4,4.5]);
                 xticks(1:4);

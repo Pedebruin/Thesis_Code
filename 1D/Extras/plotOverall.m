@@ -1,6 +1,6 @@
 clear
 close all
-set(0,'defaultTextInterpreter','latex'); 
+set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',12); 
 addpath('dataSets')
 
 load('modelMat_FINALCL1_1')
@@ -56,6 +56,7 @@ for i = 1:length(systems)
 
     subplot(length(systems),N,(1:N-1)+(i-1)*N)
         hold on
+        grid on
         ylabel('[m]')
         title(['Dataset ',num2str(i)])
         xlim([limsLeft(i,1),limsLeft(i,2)])
@@ -76,6 +77,7 @@ for i = 1:length(systems)
 
     subplot(length(systems),N,i*N)
         hold on
+        grid on
         ylabel('[m]')
         xlim([limsRight(i,1),limsRight(i,2)])
         plot(t,trues{i}(startSample:stopSample),'k')
@@ -88,10 +90,69 @@ for i = 1:length(systems)
 
 end
 
+
+%% Performance bar graph
+fits = [systems(1).simulationData.fit(:,:,1)';
+        systems(2).simulationData.fit(:,:,1)';
+        systems(3).simulationData.fit(:,:,1)';
+        systems(4).simulationData.fit(:,:,1)'];
+
+figure()    
+    hold on
+    grid on
+    title('Filter NRMSE fit scores')
+    b = bar(1:4,fits,'FaceColor','flat');
+
+    for j = 1:4
+        b(1).CData(j,:) = [0.4940 0.1840 0.5560];
+        b(2).CData(j,:) = [0.3010 0.7450 0.9330];
+        b(3).CData(j,:) = [0.6350 0.0780 0.1840];
+        
+        b(1).EdgeColor = [0,0,0];
+        b(2).EdgeColor = [0,0,0];
+        b(3).EdgeColor = [0,0,0];
+
+        xtips1 = b(1).XEndPoints;
+        xtips2 = b(2).XEndPoints;
+        xtips3 = b(3).XEndPoints;
+
+        ytips1 = b(1).YEndPoints;
+        ytips2 = b(2).YEndPoints;
+        ytips3 = b(3).YEndPoints;
+        
+        labels1 = string(round(b(1).YData,3));
+        labels2 = string(round(b(2).YData,3));
+        labels3 = string(round(b(3).YData,3));
+
+        text(xtips1,ytips1,labels1,'HorizontalAlignment','center',...
+            'VerticalAlignment','bottom');
+        text(xtips2,ytips2,labels2,'HorizontalAlignment','center',...
+            'VerticalAlignment','bottom');
+        text(xtips3,ytips3,labels3,'HorizontalAlignment','center',...
+            'VerticalAlignment','bottom');
+    end
+    meanFits = mean(fits,1);
+    yline(meanFits(1),'--','AKF','Color',[0.4940 0.1840 0.5560],...
+        'LabelHorizontalAlignment','right','LabelVerticalAlignment','middle','LineWidth',1.5)
+    yline(meanFits(2),'--','DKF','Color',[0.3010 0.7450 0.9330],...
+        'LabelHorizontalAlignment','left','LabelVerticalAlignment','middle','LineWidth',1.5)
+    yline(meanFits(3),'--','GDF','Color',[0.6350 0.0780 0.1840], ...
+        'LabelHorizontalAlignment','left','LabelVerticalAlignment','middle','LineWidth',1.5)
+    
+
+
+
+    xlim([0.5,4.5]);
+    xticks(1:4);
+    legend('AKF','DKF','GDF')
+    xlabel('Data set')
+    ylabel('NRMSE [-]')
+
+    
+%% Input estimate
 means = zeros(2,1);
 meansP = zeros(2,1);
 
-%%
 figure() % Input estimate figure!
 hold on
 sgtitle('Input estimation performance')
