@@ -720,11 +720,11 @@
             figure()
                 hold on
                 grid on
-                b = bar(1:4,simFits','FaceColor','flat');
+                b = bar(1:3,simFits(:,1:3)','FaceColor','flat');
 
                 xtips = [];
                 ytips = [];
-                for j = 1:4
+                for j = 1:3
                     for k = 1:length(obj.simulationSettings.observer)
                         b(k).CData(j,:) = colors(k,:);
                         b(k).EdgeColor = [0,0,0];
@@ -743,20 +743,20 @@
                         'LabelHorizontalAlignment','left','LabelVerticalAlignment','middle','LineWidth',1.5)
                 end
 
-                xlim([0.4,4.5]);
-                xticks(1:4);
+                xlim([0.4,3.5]);
+                xticks(1:3);
                 xticklabels({'Tip position','\eta_1','\eta_2','Input'})
-                legend(obj.simulationSettings.observer)
+                legend(obj.simulationSettings.observer,'location','northwest')
                 ylabel('NRMSE [-]')
-                title('Filter fit performance on 4 simulated signals')
+                title('Filter fit performance on 3 simulated signals')
 
             t = simData.t;
             T = 1e4;
             
             N = 3;
 
-            startsLeft = [0.25,0.7];
-            startsRight = [0.505,0.515];
+            startsLeft = [0.475,0.525];
+            startsRight = [0.508,0.511];
             
             selectedLeft = startsLeft(1)*T:startsLeft(2)*T;
             selectedRight = startsRight(1)*T:startsRight(2)*T;
@@ -779,7 +779,7 @@
 
             figure()
             sgtitle('Simulated filter response')
-            subplot(4,N,(1:N-1)+(1-1)*N) %
+            subplot(3,N,(1:N-1)+(1-1)*N) %
                 hold on
                 ylabel('Position [m]')
                 xlim(startsLeft)
@@ -790,8 +790,7 @@
                 xline(startsRight,'Color',[0.4660 0.6740 0.1880],'lineStyle','--','lineWidth',1.5)
                 xline(startsRight,'Color',[0.4660 0.6740 0.1880],'lineStyle','--','lineWidth',1.5)
                 legend('True','AKF','DKF','GDF','','','Location','northwest')
-
-            subplot(4,N,(1:N-1)+(2-1)*N)
+            subplot(3,N,(1:N-1)+(2-1)*N)
                 hold on
                 ylabel('$\eta_1$ [-]')
                 xlim(startsLeft)
@@ -801,7 +800,7 @@
                 plot(t(selectedLeft),GDF_states(1,selectedLeft),'Color',[0.6350 0.0780 0.1840])
                 xline(startsRight,'Color',[0.4660 0.6740 0.1880],'lineStyle','--','lineWidth',1.5)
                 xline(startsRight,'Color',[0.4660 0.6740 0.1880],'lineStyle','--','lineWidth',1.5)
-            subplot(4,N,(1:N-1)+(3-1)*N)
+            subplot(3,N,(1:N-1)+(3-1)*N)
                 hold on
                 ylabel('$\eta_2$ [-]')
                 xlim(startsLeft)
@@ -811,45 +810,45 @@
                 plot(t(selectedLeft),GDF_states(2,selectedLeft),'Color',[0.6350 0.0780 0.1840])
                 xline(startsRight,'Color',[0.4660 0.6740 0.1880],'lineStyle','--','lineWidth',1.5)
                 xline(startsRight,'Color',[0.4660 0.6740 0.1880],'lineStyle','--','lineWidth',1.5)
-            subplot(4,N,(1:N-1)+(4-1)*N)
-                hold on
-                ylabel('Input [N]')
-                xlim(startsLeft)
-                plot(t(selectedLeft),trueInput(selectedLeft),'k')
-                plot(t(selectedLeft),AKF_u(selectedLeft),'Color',[0.4940 0.1840 0.5560])
-                plot(t(selectedLeft),DKF_u(selectedLeft),'Color',[0.3010 0.7450 0.9330])
-                plot(t(selectedLeft),GDF_u(selectedLeft),'Color',[0.6350 0.0780 0.1840])
-                xline(startsRight,'Color',[0.4660 0.6740 0.1880],'lineStyle','--','lineWidth',1.5)
-                xline(startsRight,'Color',[0.4660 0.6740 0.1880],'lineStyle','--','lineWidth',1.5)
+%             subplot(3,N,(1:N-1)+(4-1)*N)
+%                 hold on
+%                 ylabel('Input [N]')
+%                 xlim(startsLeft)
+%                 plot(t(selectedLeft),trueInput(selectedLeft),'k')
+%                 plot(t(selectedLeft),AKF_u(selectedLeft),'Color',[0.4940 0.1840 0.5560])
+%                 plot(t(selectedLeft),DKF_u(selectedLeft),'Color',[0.3010 0.7450 0.9330])
+%                 plot(t(selectedLeft),GDF_u(selectedLeft),'Color',[0.6350 0.0780 0.1840])
+%                 xline(startsRight,'Color',[0.4660 0.6740 0.1880],'lineStyle','--','lineWidth',1.5)
+%                 xline(startsRight,'Color',[0.4660 0.6740 0.1880],'lineStyle','--','lineWidth',1.5)
 
-            subplot(4,N,N)
+            subplot(3,N,N)
                 hold on
                 xlim(startsRight)
                 plot(t(selectedRight),truePos(selectedRight),'k')
                 plot(t(selectedRight),AKF_pos(selectedRight),'Color',[0.4940 0.1840 0.5560])
                 plot(t(selectedRight),DKF_pos(selectedRight),'Color',[0.3010 0.7450 0.9330])
                 plot(t(selectedRight),GDF_pos(selectedRight),'Color',[0.6350 0.0780 0.1840])
-            subplot(4,N,2*N)
+            subplot(3,N,2*N)
                 hold on
                 xlim(startsRight)
                 plot(t(selectedRight),trueStates(1,selectedRight),'k')
                 plot(t(selectedRight),AKF_states(1,selectedRight),'Color',[0.4940 0.1840 0.5560])
                 plot(t(selectedRight),DKF_states(1,selectedRight),'Color',[0.3010 0.7450 0.9330])
                 plot(t(selectedRight),GDF_states(1,selectedRight),'Color',[0.6350 0.0780 0.1840])
-            subplot(4,N,3*N)
+            subplot(3,N,3*N)
                 hold on
                 xlim(startsRight)
                 plot(t(selectedRight),trueStates(2,selectedRight),'k')
                 plot(t(selectedRight),AKF_states(2,selectedRight),'Color',[0.4940 0.1840 0.5560])
                 plot(t(selectedRight),DKF_states(2,selectedRight),'Color',[0.3010 0.7450 0.9330])
                 plot(t(selectedRight),GDF_states(2,selectedRight),'Color',[0.6350 0.0780 0.1840])
-            subplot(4,N,4*N)
-                hold on
-                xlim(startsRight)
-                plot(t(selectedRight),trueInput(selectedRight),'k')
-                plot(t(selectedRight),AKF_u(selectedRight),'Color',[0.4940 0.1840 0.5560])
-                plot(t(selectedRight),DKF_u(selectedRight),'Color',[0.3010 0.7450 0.9330])
-                plot(t(selectedRight),GDF_u(selectedRight),'Color',[0.6350 0.0780 0.1840])
+%             subplot(3,N,4*N)
+%                 hold on
+%                 xlim(startsRight)
+%                 plot(t(selectedRight),trueInput(selectedRight),'k')
+%                 plot(t(selectedRight),AKF_u(selectedRight),'Color',[0.4940 0.1840 0.5560])
+%                 plot(t(selectedRight),DKF_u(selectedRight),'Color',[0.3010 0.7450 0.9330])
+%                 plot(t(selectedRight),GDF_u(selectedRight),'Color',[0.6350 0.0780 0.1840])
 
 
                 
@@ -898,7 +897,7 @@
                 laser = plot(Ax,[Ax.XLim(1) laserx],[1,1]*obj.modelSettings.measurementHeight*obj.modelSettings.L,'r','lineWidth',2);
                 simPlots = [simPlots, laser];
 
-                laserText = text(Ax,Ax.XLim(1),obj.modelSettings.measurementHeight*obj.modelSettings.L,'Laser',...
+                laserText = text(Ax,Ax.XLim(1),obj.modelSettings.measurementHeight*obj.modelSettings.L,'Pos.',...
                     'Color','r',...
                     'HorizontalAlignment','Left',...
                     'VerticalAlignment','Bottom');
@@ -986,6 +985,29 @@
             q = zeros(obj.Nmodes*2,1);
             q(n) = obj.plotSettings.modeAmp*5;
             modePlot = obj.showBeam(Ax,q);
+        end
+
+        %% Plot multiple mode shapes (no other place to put this)
+        function modesplot = showModes(obj,n)
+            L = obj.modelSettings.L;
+            obj.plotSettings.modeAmp = 0.75e-4;
+            obj.plotSettings.sensor = false;
+            d = figure('Name','Mode Shapes');
+            sgtitle('Mode shapes')
+            freqs = [52.9, 286];
+            for i = 1:n
+                subplot(1,n,i)
+                    hold on
+                    grid on
+                    xlabel 'm'
+                    ylabel 'm'
+                    axis equal
+                    xlim([-L/6,L/6]);
+                    ylim([0,1.2*L])
+                    title({['Mode ',num2str(i)],[num2str(freqs(i)),' Hz']})
+                    simPlots = obj.showMode(gca,i);
+            end
+            movegui(d,"southwest");
         end
     end
 end

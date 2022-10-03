@@ -100,7 +100,7 @@ fits = [systems(1).simulationData.fit(:,:,1)';
 figure()    
     hold on
     grid on
-    title('Filter NRMSE fit scores')
+    title('Filter NRMSE fit scores per data set')
     b = bar(1:4,fits,'FaceColor','flat');
 
     for j = 1:4

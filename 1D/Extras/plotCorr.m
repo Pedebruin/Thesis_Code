@@ -3,8 +3,7 @@ close all;
 addpath("../")
 addpath("Extras")
 addpath("dataSets")
-set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',12); 
-
+set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',15); 
 
 load('modelMat_FINALCL1_1')
 sys1 = modelMat(1);
@@ -20,8 +19,18 @@ mAc = [meanAccelerationSections1, meanAccelerationSections2];
 mEr = [meanErrSections1', meanErrSections2'];
 sEr = [stdErrSections1',stdErrSections2'];
 
+singleFigure = true;
+
 for i = [1,4]
-fig = figure();
+    if singleFigure == true
+        if i == 1
+            fig = figure();
+        end
+        ax = fig;
+    else
+        fig = figure();
+        ax = gca;
+    end
     set(fig,'defaultAxesColorOrder',[[0,0,0];[0.8500 0.3250 0.0980]]);
 
     title('Filter error and Mean absolute acceleration')
@@ -32,7 +41,6 @@ fig = figure();
     br.FaceAlpha = 0.3;
     br.EdgeAlpha = br.FaceAlpha;
     br.EdgeColor = [0.8500 0.3250 0.0980];
-%     br.ZData = ones(size(br.XData));
     legend('Acceleration')
 
 
@@ -67,15 +75,23 @@ fig = figure();
         bl(3).EdgeColor = [0,0,0];
     end
 
-    xlim([i-0.5,i+3-0.5])
+    if singleFigure == true
+        xlim([0.5,6.5])
+        xticks(1:6)
+        legend([bl,br],'AKF','DKF','GDF','Acceleration','location','northwest')
+    else
+        xlim([i-0.5,i+3-0.5])
+        xticks(i:i+2)
+        legend([bl,br],'AKF','DKF','GDF','Acceleration')
+    end
+
     ylim([0,max(max(mEr))*1.1])
 
-    xticks(i:i+2)
+    
     ylabel('')
     xlabel('Data set section')
     ylabel('Mean absolute filter error [m]')
     grid on
-    legend([bl,br],'AKF','DKF','GDF','Acceleration')
 end
 
 AKFcorrCoeff = corrcoef(mEr(1,:)',mAc');
@@ -107,6 +123,9 @@ figure();
     plot(mAc,fDKF,'Color',[0.3010 0.7450 0.9330]);
     plot(mAc,fGDF,'Color',[0.6350 0.0780 0.1840]);
     
-    legend('AKF','DKF','GDF','','Location','northwest');
+    AKF = ['AKF, Correlation coefficient: ', num2str(AKFcorrCoeff(1,2))];
+    DKF = ['DKF, Correlation coefficient: ', num2str(DKFcorrCoeff(1,2))];
+    GDF = ['GDF, Correlation coefficient: ', num2str(GDFcorrCoeff(1,2))];
+    legend(AKF,DKF,GDF,'','Location','northwest');
 
 

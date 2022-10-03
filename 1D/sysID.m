@@ -3,7 +3,7 @@ close all
 stored = fileparts(which('sysID.m'));
 chdir(stored)
 addpath('./../c2000/Experiments/')
-set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',15,'defaultLegendFontSize',10);  
+set(0,'defaultTextInterpreter','latex','defaultAxesFontSize',15,'defaultLegendFontSize',15);  
 
 % Bode settings
 P = bodeoptions;
@@ -107,7 +107,7 @@ if optimisePatches
 end
     
 %% Configure using standard settings
-identify = false;
+identify = true;
 if identify == true
     [Beam, sBeam, modelSettings,...
             simulationSettings, plotSettings, simulinkSettings,...
@@ -194,34 +194,38 @@ if identify == true
     
     modelMat(1).showBode(gca,1,1);
     title('Modelled and Identified plant')
-    legend('1-9Hz Identification','','150-200Hz Identification','150-200Hz Identification','Model','')
+    h = legend('1-9Hz Identification','','150-200Hz Identification','150-200Hz Identification','Model','');
+    set(h,'FontSize',12);
     model = modelMat(1).dsys_sim(1,1);
 end
 
 %%
 % parameters for PID control
-fc = simulinkSettings.controlBandwidth;
-wc = fc*2*pi;
-Kp = 1/(1*norm(freqresp(model,fc,'Hz'),2));
-wd = wc/3;
-wi = wc/5e3;
-wt = wc*3;
-
-% final PID controller
-s = tf([1,0],[0,1]);
-C = Kp*(1+wi/s)*((s/wd+1)/(s/wt+1));
-
-% Discretise and save
-Cd_sim = c2d(C,simulinkSettings.PIDSampleTime,'ZOH');
-Cd_actual = c2d(C,simulinkSettings.PIDSampleTime,'ZOH');
-% Cd = Cd*lp;
-
-Cd = ss(Cd_sim);
-
-save('./../c2000/Cd',"Cd")
-
-figure()
-margin(Cd*model,P)
+designControl = false;
+if designControl == true
+    fc = simulinkSettings.controlBandwidth;
+    wc = fc*2*pi;
+    Kp = 1/(1*norm(freqresp(model,fc,'Hz'),2));
+    wd = wc/3;
+    wi = wc/5e3;
+    wt = wc*3;
+    
+    % final PID controller
+    s = tf([1,0],[0,1]);
+    C = Kp*(1+wi/s)*((s/wd+1)/(s/wt+1));
+    
+    % Discretise and save
+    Cd_sim = c2d(C,simulinkSettings.PIDSampleTime,'ZOH');
+    Cd_actual = c2d(C,simulinkSettings.PIDSampleTime,'ZOH');
+    % Cd = Cd*lp;
+    
+    Cd = ss(Cd_sim);
+    
+    save('./../c2000/Cd',"Cd")
+    
+    figure()
+    margin(Cd*model,P)
+end
 
 %% Functions
 % Function to plot bode for specific configuration

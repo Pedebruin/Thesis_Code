@@ -19,7 +19,7 @@ function [Beam, sBeam, modelSettings,...
     E = 200E9;
     rho = 7850;
 
-    stageMass = 0;%87.5e-3;
+    stageMass = 100e-3;
     patchL = 22.5e-3;
     patches = [2e-3/L];
     simulate = true;
