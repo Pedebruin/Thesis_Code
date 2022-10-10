@@ -221,7 +221,7 @@ function [Beam, sBeam, modelSettings,...
               
         simulationSettings.waitBar = false;                      % Give waitbar and cancel option (VERY SLOW)
                 
-        simulationSettings.data = "Simulated";                       % Use Real or Simulated data (Real/Simulated)
+        simulationSettings.data = "Real";                       % Use Real or Simulated data (Real/Simulated)
             simulationSettings.dataset = 'FINALOL2';   % Long version
             
             % Use the true or faked accelerometer measurements?
