@@ -1,2 +1,97 @@
-# Thesis_Code
-The code necessary for graduation!
+# Project Title
+
+Thesis code for simultaneous input and state estimation for compliant motion stages. 
+
+## Disclaimer
+This code is intended for reference, and extension. It is not intended to be used a sa final evaluation tool. The features that are developed work fine for purposes of my own thesis work, extending however could result in unwanted simulation settings which have not been taken into account. So please use this code carefully, and if you want to actually use it for result generation, I'd recommend either stripping or writing your own code such that you know exactly what is going on and what every function or setting is used for. 
+
+I do not take responsibility for misleading or erroneous results. 
+
+## Description
+
+This code provides a simulation, and experimental environemtn to test and validate state estimation algorithms for the estimation of modal contributions in compliant motion stage flexures. 
+
+## Getting Started
+The code is set up in folders as follows:
+
+* **1D**  
+Simulation and main result evaluation in 1D
+  * **dataSets**  
+    Saved data sets and simulated models (Every model object is simulated on a data set for all filters). The model objects and corresponding data sets are saved here. If some file can't find a data set, add this folder to the path (might not be done automatically). The `modelMat` files are the simulated models, whereas the additinal files contain the raw data sets. 
+  * **Extras**   
+    Plotting and data evaluation functions mainly used to generate specific figures for reporting. 
+    * `bodeFigure.m` Plots a figure showing modal decomposition (From literature survey), requires some additional steps and can't be run immediately. 
+    * `plotCorr.m` Plots all results for correlation evaluation on first two data sets. 
+    * `plotDataset.m` Plots all signals for a dataset (as shown in the appendix)
+    * `plotOVerall.m`Plots the results for overall filter performance for all data sets. has additional settings inside. 
+    * `plotter.m` Plots the beam, state and input plots used to show general simulations. 
+  * `buildBeam.m` Builds beam system based on provided settings
+  * `buildFilters.m` Sets up all filters requested
+  * `cd.mat` Contains controller A,B,C and D matrices to be used in simulink (had to put is somewhere)
+  * `configure.m` Configures all model, simulation, plot and simulink settings. This file prety much contains all settings, some can be changed externally due to it's setup as a function. This is used to run the simulations in batch mode for instance, where a parameter needs to be changed from evaluation to evaluation. 
+  * `element.m` Class defenition for a FE element (not that important, but is used quite often in buildBeam)
+  * `MAIN.m` Main analysis file where simulations can be run. This file takes all it's settings from configure, and always runs as `configure.m` is configured. Run this file for main simulation and analysis. 
+  * `model.m` Class defenition for a model. Contains a lot of interesting member functions and variables since a model is the main data structure used. Actual simulation code is also in the member function `model.simulate()`. 
+  * `sysID.m` Contains different pieces of separate code which can be turned on or off. Mainly handles system identification and control design for the stage. Also filter tuning is done here, which is quite important. The tuned parameters are then manually transferred to `configure.m`. 
+* **2D**  
+  remnant code for 2D simulation, mostly old and redundant. Don't go here. (written a long time ago)
+* **c2000**  
+  Code for running the experimental setup and data acquisition. Most settings here are also set in `configure.m`. Almost all simulink files run `configure.m` at initialisation. 
+  * **MatLib**  
+    C library used for matrix operations in the custon S_function block. Modified slightly. Source and licence can be found inside. 
+  * **slprj**  
+    Auto generated simulink folder
+  * **Filters_ert_rtw**
+    Auto generated compile folder made by the simulink code package for the `Filters.slx` simulink file. 
+  * **Identification_ert_rtw**  
+    Auto generated compile folder made by the simulink code package for the `Identification.slx` simulink file. Simplest file, so good starting point to see  if things are working. 
+  * **stageControl_ert_rtw**  
+    Auto generated compile folder made by the simulink code package for the `stageControl.slx` simulink file. 
+  * `AKF_Sfunc.c` Main C file for custom AKF S function block. This file needs to be compiled together with the MatLib library (included its header aswell) to get the custom block to work as it only reads out the `.mexw64` file. Compilation is done using a mingw installation in matlab. (Been a while for me too, can't remember exactly)
+  * `AKF_Sfunc.mexw64` Compiled S function.   
+  * `Cd.mat` Controller used for closed loop stage control (In the form of a linear discrete state space system generated by `sysID.m`)
+  * `Filters.slx` Simulink code intended to run on CPU2 of the C2000 processor. Reads out IPC memory location and supposed to run filter block. Mainly setup works, actual filter implementation does not.
+  * `Identification.slx` Simulink code used for stage dynamics identification using sine sweeps. 
+  * `stageControl.slx` Simulink code inteded to run on CPU1 of the c2000 processor. Runs CL control on the stage, and reads out sensors and button. Is intended to run in conjunction with `Filters.slx` on CPU2. This file also puts the relevant sensor information into an IPC block for CPU2 to use. 
+
+
+### DependenciesFor
+* For the simulations:  
+  Running `MAIN.m` should prompt you with the packages that are required (Didn't keep a list, but 
+* For simulink:
+  Follow the tuturial Marcin provides to install:
+  * Matlab coder
+  * Simulink coder
+  * Embedded coder
+* For the S function, I'd have to do some more digging to find out how exactly the files are compiled. (Definetly not using legacy code). I beleive it was a mingw installation to crate a mex file which can be read by the S-function block in simulink. But again, I'd have to check further. 
+
+
+
+### Getting started
+
+* How to run the program
+Go to the **1D** folder
+```
+MAIN
+```
+Will run the main file using the configuration set in `configure.m`. The configuration settings are all commented in this file for easy understanding. Please note that it is not a fully developed tool, so discrepencies betwween settings or undefined usecases can occur. 
+
+The file is currently set up to run all state estimation algorithms (MF, LO, KF, AKF, DKF, GDF) on the dataset OL2 and plot the results. This does take a while. If you just want to use one filter, change the `simulationSettings.observer` property to the filter you like. 
+
+The model is also currently set up to correspond with the experimental setup. If you would like to experiment with more sensor configurations for for instance the Modal Filter, change `simulationSettings.data` to Simulated. This will use a simulated system instead of the measured signals. Here, you can adjust all other parameters like amount and location of the strain gauges, amount and locations of the accelerometers and so forth to observe the effect. Again, changing the `simulationSettings.observer` property changes the observers that are simulatedn.  When simulated data is used, the observers are provided an erroneous model of the sysstem a, noise is added and the initial states are corrupted. This can all be changed in the simulationsettings, and you do have to keep in mind what exactly you are simulating. 
+
+Batch mode allows you to vary parameters over multiple simulation runs and observe the result. The whole reason a matrix of model is made (`modelMat`) is to capture all these different models. `MAIN.m` is set up to first construct all different models, put them in `modelMat` whereafter all models in `modelmat` are simulated separately using their own set of settings and system models. This allows for the use of the parfor loop which simulates models in parallel using the parallel programming package. This however does require you to turn on the `simulationSettings.parallel` parameter, and uncomment the `parfor` loop in place of the `for` loop in `MAIN.m`. 
+
+## Help
+
+Any advise for common problems or issues.
+```
+command to run if program contains helper info
+```
+
+## Authors
+
+Contributors names and contact info
+
+ex. Pim de Bruin
+pedebruin@hotmail.com
