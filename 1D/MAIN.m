@@ -579,62 +579,79 @@ function [fit] = optfunc(args,filter)
                 params = ["QTuneGDF", "RTuneGDF"];
         end
     
+        % Run configure.m to get parameters and settings into workspace. Do
+        % change the parameters defined in params to the values defined
+        % in args. 
         [Beam, sBeam, modelSettings,...
         simulationSettings, plotSettings,simulinkSettings...
         ,LO,KF,AKF,DKF,GDF,~, ~] = configure(1,params,args,"Ssteel");
     
+        % Some code that is necessary somehow, remnant of earlier
+        % implementations. 
         AKF.nd = 0;
         DKF.nd = 0;
         modelSettings.l = 1;
+
+        % Only simulate the filter that is optimised
         simulationSettings.observer = filter;
     
         % Input measured noise covariance if real data
         if strcmp(simulationSettings.data,"Real")
             load('noiseSample1.mat')
         
-            laserNoise = squeeze(data{5}.Values.Data);
-            laserNoise = laserNoise - mean(laserNoise);
-            laserCov = cov(laserNoise');
+            laserNoise = squeeze(data{5}.Values.Data); % Extract laser noise sample
+            laserNoise = laserNoise - mean(laserNoise); % Remove mean
+            laserCov = cov(laserNoise'); % Find laser covariance
             
-            patchNoise = double(squeeze(data{2}.Values.Data));
-            patchNoise = patchNoise -mean(patchNoise);
-            patchCov = cov(patchNoise');
+            patchNoise = double(squeeze(data{2}.Values.Data)); % Extract patch noise sample
+            patchNoise = patchNoise -mean(patchNoise); % Remove mean
+            patchCov = cov(patchNoise'); % Find patch covarance
         
             accNoise = double(squeeze(data{1}.Values.Data))/simulationSettings.accSensitivity;
-            accNoise = accNoise -mean(accNoise);
-            accNoise = lowpass(accNoise,1e3,1e4);
-            accCov = cov(accNoise');
+            accNoise = accNoise -mean(accNoise); % Remove mean
+            accNoise = lowpass(accNoise,1e3,1e4); % Lowpass
+            accCov = cov(accNoise'); % Find acc covariance
         
-            modelSettings.accCov = accCov;
-            modelSettings.laserCov = laserCov;
-            modelSettings.patchCov = patchCov;
+            modelSettings.accCov = accCov; % Set accCov to actual Acc covariance
+            modelSettings.laserCov = laserCov; % Set laserCov to laser covariance
+            modelSettings.patchCov = patchCov; % Set patchCov to patch covariance
         end
     
+        % Set up a model
         SYS = model(); % create model object
         [SYS,~] = buildBeam(modelSettings,simulationSettings,plotSettings,Beam,sBeam,SYS); % Fill model object 
         
+        % If the position measurement is used for estimation, it is also
+        % put into the observer model, otherwise it is removed. 
         if modelSettings.posMeasurement == true
             SYS.dsys_obs = SYS.dsys_sim;
         else
             SYS.dsys_obs = SYS.dsys_sim(2:end,1:end);    % Cut off laser measurement
         end
     
+        % Some other parameters that need to be defined aswell
         SYS.ny = size(SYS.dsys_sim,1);
         SYS.nu = size(SYS.dsys_sim,2);
         SYS.nq = size(SYS.dsys_sim.A,1);
     
+        % Build the filters using the defined parameters 
         SYS = buildFilters(SYS,LO,KF,AKF,DKF,GDF);    
     
+        % Use real data set anyway, irrespective of settings. 
         load(simulationSettings.dataset); % Load dataset to tune on
         Udist = -squeeze(data{4}.Values.Data)/simulinkSettings.matchingGain;
     
-        warning('off','MATLAB:nearlySingularMatrix')
+        warning('off','MATLAB:nearlySingularMatrix') % Turn off possible annoying warning when weird parameter are chosen by fminsearch
         SYS = SYS.simulate(Udist,1);
         warning('on','MATLAB:nearlySingularMatrix')
     
-        if SYS.simulationData.broken == true
+        if SYS.simulationData.broken == true 
+            % If simulation blows up, SYS.simulationData.broken will throw
+            % a flag. Check this flag and give NaN as result if this
+            % happened. 
             fit = NaN;
         else
+            % Else, output the fit performance
             fit = SYS.simulationData.fit;
             fprintf('P = [%10.4e, %10.4e]\n', args(1),args(2));
             disp(['Fit = ',num2str(fit(1))])
